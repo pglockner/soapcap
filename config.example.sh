@@ -1,6 +1,11 @@
+# shellcheck shell=bash
 # soapcap configuration — copy to ~/.config/soapcap/config.sh and edit.
 # This file is sourced by bin/soapcap. Every setting is optional; flags on
 # the command line win over anything set here.
+#
+# Every variable below is read by lib/common.sh after this file is sourced,
+# not within this file itself — shellcheck can't see that across files.
+# shellcheck disable=SC2034
 
 # Speaker labels applied to the two audio sources.
 SOAPCAP_MIC_LABEL="Therapist"     # your microphone
