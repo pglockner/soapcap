@@ -1,0 +1,29 @@
+# Never commit captured PHI or working files.
+*.transcript
+*.transcript.txt
+*.srt
+*.vtt
+*.json
+*.jsonl
+*.m4a
+*.wav
+*.aiff
+*.mp3
+*.mp4
+/out/
+/notes/
+/tmp/
+.DS_Store
+
+# Local config override (keep config.example.sh tracked)
+config.sh
+
+# macOS / editor artifacts
+._*
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# Local development notes (not for public history — see the file itself)
+DEV_NOTES.local.md

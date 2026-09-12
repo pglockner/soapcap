@@ -1,0 +1,26 @@
+name: Shell lint
+
+# soapcap only runs on macOS 26 (Apple silicon) and depends on yap, Ollama,
+# and real audio hardware — none of which this runner has. This workflow is
+# static analysis only: syntax and shellcheck, nothing that executes soapcap
+# itself.
+on:
+  push:
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: bash -n syntax check
+        run: |
+          for f in bin/soapcap install.sh soapcap.command lib/*.sh; do
+            bash -n "$f"
+          done
+
+      - name: shellcheck
+        uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: '.'

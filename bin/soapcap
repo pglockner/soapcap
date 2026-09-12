@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# soapcap — capture a speaker-attributed transcript of a telehealth session
+# using only on-device macOS transcription (Apple SpeechAnalyzer, via `yap`),
+# then draft a SOAP/DAP/BIRP note from it with a local Ollama model.
+set -u
+
+SC_VERSION="0.1.0"
+
+# Resolve through symlinks so a PATH symlink still finds lib/.
+_sc_src="${BASH_SOURCE[0]}"
+while [ -h "$_sc_src" ]; do
+  _sc_dir=$(cd -P "$(dirname "$_sc_src")" && pwd)
+  _sc_src=$(readlink "$_sc_src")
+  case "$_sc_src" in
+    /*) ;;
+    *) _sc_src="$_sc_dir/$_sc_src" ;;
+  esac
+done
+SC_ROOT=$(cd -P "$(dirname "$_sc_src")/.." && pwd)
+unset _sc_src _sc_dir
+
+SC_WORKDIR=""
+SC_JSON=""
+
+# shellcheck source=lib/common.sh
+. "$SC_ROOT/lib/common.sh"
+# shellcheck source=lib/capture.sh
+. "$SC_ROOT/lib/capture.sh"
+# shellcheck source=lib/transcript.sh
+. "$SC_ROOT/lib/transcript.sh"
+# shellcheck source=lib/commands.sh
+. "$SC_ROOT/lib/commands.sh"
+
+trap 'sc_cleanup' EXIT
+
+main() {
+  local cmd="${1:-help}"
+  [ $# -gt 0 ] && shift
+  case "$cmd" in
+    doctor)               sc_cmd_doctor "$@" ;;
+    live)                 sc_cmd_live "$@" ;;
+    transcribe)           sc_cmd_transcribe "$@" ;;
+    note)                 sc_cmd_note "$@" ;;
+    session)              sc_cmd_session "$@" ;;
+    version|-V|--version) printf 'soapcap %s\n' "$SC_VERSION" ;;
+    help|-h|--help)       sc_usage ;;
+    *) sc_err "unknown command: $cmd"; sc_usage; return 2 ;;
+  esac
+}
+
+main "$@"
