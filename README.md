@@ -13,28 +13,15 @@ disk**.
 
 ## How it works
 
-```
-Zoom / Meet / Teams / Doxy.me          your microphone
-        (system audio)                        │
-              │                               │
-              └──────────►  yap listen-and-dictate  ◄──┘
-                           (Apple SpeechAnalyzer,
-                            fully on-device)
-                                    │  JSON, via a $TMPDIR file
-                                    │  deleted on every exit path
-                                    ▼
-                           soapcap render
-                                    │
-                                    ▼
-                    Therapist: ...          ← stdout (default)
-                    Client: ...             ← or --out FILE
-                                    │
-                                    ▼  soapcap note
-                              Ollama (local)
-                                    │
-                                    ▼
-                    SUBJECTIVE: ...         ← stdout (default)
-                    OBJECTIVE: ...          ← or --out FILE
+```mermaid
+flowchart TD
+    A["Zoom / Meet / Teams / Doxy.me<br/>(system audio)"] --> C
+    B["your microphone"] --> C
+    C["yap listen-and-dictate<br/>(Apple SpeechAnalyzer, fully on-device)"]
+    C -->|"JSON, via a $TMPDIR file<br/>deleted on every exit path"| D["soapcap render"]
+    D --> E["Therapist: ...<br/>Client: ...<br/><br/>stdout (default) or --out FILE"]
+    E -->|"soapcap note"| F["Ollama (local)"]
+    F --> G["SUBJECTIVE: ...<br/>OBJECTIVE: ...<br/><br/>stdout (default) or --out FILE"]
 ```
 
 `soapcap` never talks to Zoom or any meeting API — it captures **system
