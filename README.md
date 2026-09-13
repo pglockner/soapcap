@@ -457,3 +457,4 @@ matters.
 | `note`: "model is not pulled" | `ollama pull llama3.1:8b` (or whatever `--model` you passed). |
 | `note` is slow / machine feels sluggish | Close other apps, or use a smaller model (`--model llama3.2:3b`) — see [Requirements](#requirements) and [Draft a note](#draft-a-note). |
 | `note` with no FILE just sits there | No terminal / no fzf, so there's nothing to read or browse. Pass a file, pipe one in, or `brew install fzf`. |
+| Want Ollama to stop running | `ollama stop <model>` unloads just that model from memory (Ollama reloads it next time it's needed). To stop Ollama itself: `brew services stop ollama` if you started it that way, otherwise quit/kill the `ollama serve` process. |
