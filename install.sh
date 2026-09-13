@@ -58,8 +58,23 @@ if [ -t 0 ] && [ -d "$HOME/Desktop" ]; then
     *)
       ln -sf "$here/soapcap.command" "$HOME/Desktop/soapcap.command"
       echo "==> ~/Desktop/soapcap.command -> $here/soapcap.command"
-      echo "    First double-click: right-click it and choose Open once, so"
-      echo "    Gatekeeper trusts it — see README 'Clickable shortcut'."
+      echo "    First double-click will be blocked by Gatekeeper — see"
+      echo "    README 'Clickable shortcut' for the Open Anyway steps."
+
+      if command -v fileicon >/dev/null 2>&1; then
+        fileicon set "$HOME/Desktop/soapcap.command" "$here/assets/soapcap.icns" >/dev/null 2>&1 || true
+      elif [ -t 0 ]; then
+        printf "Give the shortcut a custom icon (installs fileicon via Homebrew)? [Y/n] "
+        ans=""
+        read -r ans || true
+        case "$ans" in
+          n|N|no|No) : ;;
+          *)
+            brew install fileicon
+            fileicon set "$HOME/Desktop/soapcap.command" "$here/assets/soapcap.icns" || true
+            ;;
+        esac
+      fi
       ;;
   esac
 fi

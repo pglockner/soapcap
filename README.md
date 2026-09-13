@@ -294,6 +294,16 @@ This stays a plain tracked shell script rather than a compiled `.app` on
 purpose — a `.app` would need Xcode/Automator and a committed binary,
 rebuilt after every change; the symlinked script always runs current code.
 
+**Icon**: `install.sh` gives the Desktop shortcut a custom icon
+(`assets/soapcap.icns`) via [fileicon](https://github.com/mklement0/fileicon)
+if it's installed, or offers to install it — purely cosmetic, skip it and
+the shortcut just shows the generic script icon. By hand:
+
+```sh
+brew install fileicon
+fileicon set ~/Desktop/soapcap.command /path/to/soapcap/assets/soapcap.icns
+```
+
 **Want a real keyboard shortcut?** Not shipped (a `.shortcut` file is a
 binary asset with the same staleness problem), but easy by hand: in
 Shortcuts.app, add a "Run Shell Script" action running
