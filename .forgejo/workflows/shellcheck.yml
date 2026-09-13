@@ -31,5 +31,5 @@ jobs:
 
       - name: shellcheck
         run: |
-          apk add --no-cache shellcheck
-          shellcheck bin/soapcap install.sh soapcap.command lib/*.sh config.example.sh
+          curl -sSL https://github.com/koalaman/shellcheck/releases/download/v0.10.0/shellcheck-v0.10.0.linux.x86_64.tar.xz | tar -xJ
+          ./shellcheck-v0.10.0/shellcheck bin/soapcap install.sh soapcap.command lib/*.sh config.example.sh
