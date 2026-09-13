@@ -56,7 +56,7 @@ sc_capture() {
       printf '\r  ●  recording  %02d:%02d   (q to stop, p to pause, Ctrl-C also stops)  ' \
         $((s / 60)) $((s % 60)) >&2
       key=""
-      read -r -s -n 1 -t 1 key
+      IFS= read -r -s -n 1 -t 1 key
       case "$key" in
         q|Q|x|X) kill -INT "$ypid" 2>/dev/null ;;
         p|P|' ')  kill -INT "$ypid" 2>/dev/null; SC_CAPTURE_ACTION="paused" ;;
@@ -136,7 +136,7 @@ sc_capture_session() {
       local key resumed=0
       while [ "$resumed" -eq 0 ]; do
         key=""
-        read -r -s -n 1 key || key="q"
+        IFS= read -r -s -n 1 key || key="q"
         case "$key" in
           p|P|' ') resumed=1 ;;
           q|Q|x|X) resumed=1; keep_going=0 ;;
