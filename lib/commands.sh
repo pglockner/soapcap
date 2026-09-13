@@ -443,10 +443,19 @@ sc_cmd_session() {
   transcript=$(printf '%s' "$SC_JSON" | sc_render_transcript "$mic" "$sys" "$dedupe") \
     || sc_die "failed to render transcript from yap JSON"
 
+  local line_count
+  line_count=$(printf '%s\n' "$transcript" | wc -l | tr -d ' ')
+
   sc_info ""
-  sc_info "----- transcript -----"
-  printf '%s\n' "$transcript"
-  sc_info "-----------------------"
+  sc_info "Transcript: $line_count line(s)."
+  local show_transcript=1
+  [ -t 0 ] && { sc_confirm "Show the transcript?" || show_transcript=0; }
+  if [ "$show_transcript" -eq 1 ]; then
+    sc_info ""
+    sc_info "----- transcript -----"
+    printf '%s\n' "$transcript"
+    sc_info "-----------------------"
+  fi
 
   sc_warn_one_sided_capture "$SC_JSON" "$mic" "$sys"
 

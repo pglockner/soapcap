@@ -221,13 +221,13 @@ soapcap session
 ```
 
 The scriptable path above assumes you remember the pipe syntax. `session`
-instead captures live, shows the transcript, then asks **"Draft a note from
-this?"**, **"Format?"**, and **"Copy the note to the clipboard?"** — Enter
-takes the sensible default each time (yes, soap, yes). `--format`,
-`--no-note`, `--clipboard`, `--model` skip the corresponding prompt for
-scripted use; every `live`/`note` flag still applies. This is exactly what
-double-clicking `soapcap.command` runs — see
-[Clickable shortcut](#clickable-shortcut).
+instead captures live, reports the transcript's line count and asks **"Show
+the transcript?"**, then asks **"Draft a note from this?"**, **"Format?"**,
+and **"Copy the note to the clipboard?"** — Enter takes the sensible default
+each time (yes, yes, soap, yes). `--format`, `--no-note`, `--clipboard`,
+`--model` skip the corresponding prompt for scripted use; every `live`/`note`
+flag still applies. This is exactly what double-clicking `soapcap.command`
+runs — see [Clickable shortcut](#clickable-shortcut).
 
 ### Pause/resume
 
