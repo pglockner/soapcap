@@ -17,7 +17,11 @@ jobs:
     runs-on: host
     steps:
       - name: checkout
-        run: git clone --depth=1 --branch "${GITHUB_REF_NAME}" "http://localhost:3000/${GITHUB_REPOSITORY}.git" .
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git -c http.extraheader="Authorization: Bearer ${GITHUB_TOKEN}" \
+            clone --depth=1 --branch "${GITHUB_REF_NAME}" "http://localhost:3000/${GITHUB_REPOSITORY}.git" .
 
       - name: bash -n syntax check
         run: |
