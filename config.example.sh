@@ -26,5 +26,7 @@ SOAPCAP_LOCALE=""
 # cost — real testing found 3b unreliable at not fabricating clinical
 # Objective-section content.
 # SOAPCAP_MODEL="llama3.1:8b"
+# Stronger but heavier (~9GB, ~2.5x slower) — see README "Draft a note":
+# SOAPCAP_MODEL="qwen2.5:14b"
 # SOAPCAP_FORMAT="soap"             # soap | dap | birp
 # SOAPCAP_OLLAMA_HOST="http://localhost:11434"

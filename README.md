@@ -190,40 +190,29 @@ surface anything suggesting risk (self-harm, harm to others, abuse, crisis),
 and write "Not addressed in this session" rather than pad a section out.
 Formats: `soap` (default), `dap`, `birp`.
 
-**Read every note before it goes near a chart.** It's still an LLM — it can
-misjudge nuance, and this matters most for the Objective section: tested
-`llama3.2:3b` against `llama3.1:8b` on two transcripts (one with no narrated
-presentation detail, one with a client audibly tearing up). 3b either
-invented clinical-sounding detail that wasn't there ("affect was tense,"
-"fidgeted") or, once the prompt was hardened against that, swung to missing
-the real tearing-up observation instead. 8b got both right, which is why
-it's the default despite the bigger download — two transcripts isn't a
-benchmark, so check the Objective section closely regardless of model.
+**Read every note before it goes near a chart.** It's still an LLM. Mistakes
+concentrate in the Objective section, the one part that requires telling an
+actual in-the-room observation apart from a client's own description of how
+they've been feeling — a smaller model can either invent detail that isn't
+there or miss detail that is. As a backstop, `sc_generate_note` also strips
+an occasional unprompted "Note: ..." aside some models append despite being
+told not to. Both are help, not a guarantee.
 
-A follow-up 10-run test on `llama3.1:8b` found it reliably caught an
-observation explicitly narrated by the therapist ("I notice you're tearing
-up") but initially missed a client's own present-moment self-report every
-time ("sorry, I'm getting a little choked up") — reading it as a general
-feeling-word rather than something happening in the room right now. The
-prompt now draws that distinction explicitly (present-moment reaction =
-Objective, regardless of who says it, vs. a general/past-tense report of
-feeling something = Subjective), which raised the self-reported case from
-0/5 to roughly 1-in-2 hit rate without introducing false positives on
-purely-Subjective transcripts (still 5/5 correct). Still worth a manual
-read every time — this is an improvement, not a guarantee.
+**Models:**
 
-Field-observed on `llama3.1:8b` (rare, not reproduced on demand — LLM output
-is stochastic): a trailing "Note: this appears to be a test recording..."
-paragraph appended after Plan, editorializing about the transcript despite
-the prompt explicitly forbidding closing remarks. The prompt now says so
-even more directly, and `sc_generate_note` strips exactly one trailing
-paragraph that opens with a disclaimer-style lead-in ("Note:", "Disclaimer:",
-"Please note:", …) as a backstop — verified against the real observed
-output and against legitimate multi-paragraph Plan content (not touched).
-Belt-and-suspenders, not a guarantee an LLM never says something odd; still
-read the note.
+- **`llama3.1:8b`** (default, ~5GB) — the best balance of reliability and
+  speed. Doesn't invent observations, but can under-read a client's own
+  present-moment reaction ("I'm getting choked up") as just a general
+  feeling rather than something that happened in the room.
+- **`llama3.2:3b`** (~2GB) — fastest and lightest, but prone to inventing
+  plausible-sounding clinical detail that isn't in the transcript. Only
+  worth it under real memory pressure.
+- **`qwen2.5:14b`** (~9GB, opt-in via `--model`) — most reliable at catching
+  real Objective-section detail, including a client's own in-the-moment
+  reactions. Costs roughly 2.5x the generation time and more RAM headroom;
+  occasionally adds a little unstated color rather than bare extraction.
 
-Other flags: `--model NAME`, `--host URL`, `--clipboard`.
+Other flags: `--host URL`, `--clipboard`.
 
 ### Guided session
 
@@ -243,17 +232,10 @@ double-clicking `soapcap.command` runs — see
 ### Pause/resume
 
 Press **p** (or space) while recording; **p** again to resume. This is a
-real pause, not cosmetic — it stops `yap` the same clean way Ctrl-C does
-(nothing captured while paused), then starts a fresh capture on resume.
-Multiple pause/resume cycles are stitched into one transcript afterward, in
-order.
-
-An easier-to-build version — keep transcribing underneath and just hide the
-paused portion from the output — was rejected: it would quietly keep
-capturing exactly what you asked it to stop capturing. Verified with real
-audio: a sentence spoken deliberately during a pause window is completely
-absent from the resulting transcript, while content before and after is
-stitched back together correctly.
+real pause, not cosmetic — it stops `yap` the same clean way Ctrl-C does,
+so nothing is captured while paused, then starts a fresh capture on
+resume. Multiple pause/resume cycles are stitched into one transcript
+afterward, in order.
 
 Keypresses need a real terminal (`soapcap.command` and a normal interactive
 run both qualify). Backgrounded/piped invocations fall back to signal-only
@@ -346,17 +328,10 @@ SOAPCAP_DEDUPE_THRESHOLD=0.7   # word-containment ratio (0–1) to call it an ec
 SOAPCAP_DEDUPE_MINWORDS=2      # segments shorter than this are never dropped
 ```
 
-`--no-dedupe` shows the raw, undeduplicated output.
-
-Verified against a real captured conversation: the two channels segment
-near-identically, splitting each utterance into one long chunk plus a short
-trailing fragment (`"...session?"`, `"you up."`). Containment — does the
-*shorter* segment's wording fully appear in the longer one? — catches those
-fragments; plain word-overlap (Jaccard) doesn't, since it penalizes the
-length mismatch. A single leftover word still isn't dropped —
-`SOAPCAP_DEDUPE_MINWORDS` protects that case, since any one common word
-("yeah", "so") trivially "contains" itself in nearly anything nearby. Expect
-the occasional one-word duplicate; that's the deliberate trade-off.
+`--no-dedupe` shows the raw, undeduplicated output. `SOAPCAP_DEDUPE_MINWORDS`
+deliberately lets a single leftover word through unfiltered rather than risk
+dropping a real short line — expect the occasional one-word duplicate as a
+result.
 
 Headphones remain the more reliable fix regardless — a single earbud is
 enough, and you're not straining to hear the session through a laptop
@@ -469,7 +444,7 @@ matters.
 
 | Symptom | Fix |
 | --- | --- |
-| Double-clicking `soapcap.command` says it can't be opened | Right-click → Open once (Gatekeeper, first run only) — see [Clickable shortcut](#clickable-shortcut). |
+| Double-clicking `soapcap.command` says it can't be opened | Gatekeeper, first run only — see [Clickable shortcut](#clickable-shortcut) for the Open Anyway steps. |
 | `doctor` WARN: no usable output | Grant **both** Microphone and Screen Recording to your terminal, then fully restart it. |
 | `live` prints a "captured your side but nothing from the other party" note | Expected on FaceTime — see [Known limitations](#facetime-no-system-audio-at-all). Not FaceTime? Check the other party's output device / volume. |
 | Occasional short duplicate line (often one word) | Expected — see [Without headphones](#without-headphones). Lower `SOAPCAP_DEDUPE_MINWORDS` to `1` to also catch these, at the cost of risking a real one-word utterance. |

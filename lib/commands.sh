@@ -26,6 +26,7 @@ sc_cmd_doctor() {
   fi
   if [ "$mem_gb" -ge 32 ] 2>/dev/null; then
     sc_info "        ${mem_gb}GB: comfortable for 'note' (default llama3.1:8b) alongside other apps"
+    sc_info "        (or the stronger, slower qwen2.5:14b — see config.example.sh)"
   elif [ "$mem_gb" -ge 16 ] 2>/dev/null; then
     sc_info "        ${mem_gb}GB: llama3.1:8b (default) works, but close memory-heavy apps"
     sc_info "        (browsers, other local models) first. Comfortable otherwise:"
