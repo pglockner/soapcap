@@ -22,5 +22,10 @@ jobs:
 
       - name: shellcheck
         run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          # GitHub's ubuntu-latest runs as a non-root user (needs sudo);
+          # our self-hosted Forgejo runner's job containers run as root
+          # with no sudo binary at all.
+          SUDO=""
+          command -v sudo >/dev/null 2>&1 && SUDO=sudo
+          $SUDO apt-get update -qq && $SUDO apt-get install -y -qq shellcheck
           shellcheck bin/soapcap install.sh soapcap.command lib/*.sh config.example.sh
