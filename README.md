@@ -200,6 +200,18 @@ the real tearing-up observation instead. 8b got both right, which is why
 it's the default despite the bigger download — two transcripts isn't a
 benchmark, so check the Objective section closely regardless of model.
 
+A follow-up 10-run test on `llama3.1:8b` found it reliably caught an
+observation explicitly narrated by the therapist ("I notice you're tearing
+up") but initially missed a client's own present-moment self-report every
+time ("sorry, I'm getting a little choked up") — reading it as a general
+feeling-word rather than something happening in the room right now. The
+prompt now draws that distinction explicitly (present-moment reaction =
+Objective, regardless of who says it, vs. a general/past-tense report of
+feeling something = Subjective), which raised the self-reported case from
+0/5 to roughly 1-in-2 hit rate without introducing false positives on
+purely-Subjective transcripts (still 5/5 correct). Still worth a manual
+read every time — this is an improvement, not a guarantee.
+
 Field-observed on `llama3.1:8b` (rare, not reproduced on demand — LLM output
 is stochastic): a trailing "Note: this appears to be a test recording..."
 paragraph appended after Plan, editorializing about the transcript despite

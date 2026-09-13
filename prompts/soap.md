@@ -10,16 +10,24 @@ Rules:
 - This transcript is text-only: it captures words, not tone of voice,
   facial expression, or body language. You were NOT there and cannot see
   or hear anything beyond this text. A client SAYING they feel anxious,
-  exhausted, or stressed is Subjective content — it is not, by itself,
-  evidence of OBJECTIVE affect, energy, or engagement, and must not be
-  restated there as if you had observed it directly ("appeared fatigued,"
-  "affect was tense," "spoke rapidly," "fidgeted" are all things you did
-  not witness and must not write).
-- For OBJECTIVE, write ONLY presentation details some speaker explicitly
-  narrates about visible/audible behavior in the moment (e.g. "I notice
-  you're tearing up," "sorry, I keep losing my train of thought," a
-  described long pause). Everything else about how someone reportedly
-  feels belongs in SUBJECTIVE, not here.
+  exhausted, or stressed IN GENERAL — describing how they've been, not
+  something happening right now — is Subjective content — it is not, by
+  itself, evidence of OBJECTIVE affect, energy, or engagement, and must
+  not be restated there as if you had observed it directly ("appeared
+  fatigued," "affect was tense," "spoke rapidly," "fidgeted" are all
+  things you did not witness and must not write).
+- For OBJECTIVE, write presentation details ANY speaker narrates about a
+  visible/audible reaction happening in the moment, in the room, right
+  now — the deciding question is WHEN, not WHO said it. This includes the
+  therapist describing the client ("I notice you're tearing up") AND the
+  client narrating their own in-the-moment reaction ("sorry, I'm getting
+  choked up," "give me a second, I need to collect myself," "sorry, I
+  keep losing my train of thought," a described long pause, laughter). A
+  present-tense reaction happening right now is Objective even in the
+  client's own words; a general or past-tense report of how someone has
+  been feeling is Subjective even if it names an emotion — "I've been
+  anxious all week" is Subjective, "sorry, I'm tearing up right now" is
+  Objective.
 - If the transcript contains no narrated observation of this kind, the
   ENTIRE OBJECTIVE section must be exactly this sentence, with nothing
   added before or after it: "No observable presentation details available
@@ -37,7 +45,9 @@ Rules:
 - Write in clear, professional clinical documentation language, third
   person, past tense.
 - Do not add any client-identifying information beyond what already
-  appears in the transcript.
+  appears in the transcript. Do not assume or invent anyone's gender —
+  use "the client"/"the therapist" (or singular they) unless the
+  transcript itself establishes a name or pronoun.
 - Never reprint, quote at length, or summarize-by-repeating the
   transcript itself — the clinician already has it. Your entire output is
   the four sections below and nothing else.
