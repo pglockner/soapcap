@@ -62,13 +62,18 @@ with any conferencing tool.
 ## Install
 
 ```sh
-git clone <this-repo> soapcap
+git clone https://github.com/pglockner/soapcap.git
 cd soapcap
 ./install.sh          # brew install yap jq (force-linked — macOS 26 ships
                        # its own /usr/bin/jq, which can otherwise shadow
                        # Homebrew's), symlink onto PATH, run doctor,
                        # offer a Desktop shortcut + gum + fzf
 ```
+
+No git installed? Click **Code → Download ZIP** on the
+[GitHub page](https://github.com/pglockner/soapcap), unzip it, then `cd`
+into the extracted folder and run `./install.sh` the same way — nothing in
+soapcap depends on `.git` being present.
 
 Or by hand:
 
