@@ -280,10 +280,15 @@ Desktop; by hand:
 ln -sf /path/to/soapcap/soapcap.command ~/Desktop/soapcap.command
 ```
 
-**First double-click**: not usually needed after a plain `git clone`, but a
-browser-downloaded copy gets Gatekeeper's quarantine flag, and macOS will
-refuse to open an unsigned script once. Right-click → Open clears it for
-good.
+**First double-click**: not usually needed after a plain `git clone` on the
+same Mac, but a copy that crossed machines some other way — the ZIP
+download, AirDrop, a USB drive — carries Gatekeeper's quarantine flag.
+Current macOS won't offer a direct "Open" button for an unsigned script;
+double-click (or right-click → Open) once to trigger the block, then go to
+**System Settings → Privacy & Security**, scroll to the Security section,
+and click **Open Anyway** next to the `soapcap.command` notice (confirm
+with your password/Touch ID, then **Open** once more in the follow-up
+dialog). After that it opens normally, no repeat needed.
 
 This stays a plain tracked shell script rather than a compiled `.app` on
 purpose — a `.app` would need Xcode/Automator and a committed binary,
