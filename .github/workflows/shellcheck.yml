@@ -32,4 +32,8 @@ jobs:
           shellcheck bin/soapcap install.sh soapcap.command update.command test/run.sh lib/*.sh config.example.sh
 
       - name: fixture tests
-        run: test/run.sh
+        run: |
+          # jq is preinstalled on GitHub's ubuntu-latest but missing from
+          # the Forgejo runner's job image (data.forgejo.org/oci/node:lts).
+          command -v jq >/dev/null 2>&1 || { SUDO=""; command -v sudo >/dev/null 2>&1 && SUDO=sudo; $SUDO apt-get update -qq && $SUDO apt-get install -y -qq jq; }
+          test/run.sh
