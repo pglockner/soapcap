@@ -228,11 +228,17 @@ soapcap session
 The scriptable path above assumes you remember the pipe syntax. `session`
 instead captures live, reports the transcript's line count and asks **"Show
 the transcript?"**, then asks **"Draft a note from this?"**, **"Format?"**,
-and **"Copy the note to the clipboard?"** — Enter takes the sensible default
-each time (yes, yes, soap, yes). `--format`, `--no-note`, `--clipboard`,
-`--model` skip the corresponding prompt for scripted use; every `live`/`note`
-flag still applies. This is exactly what double-clicking `soapcap.command`
-runs — see [Clickable shortcut](#clickable-shortcut).
+and after drafting, **"This draft: keep / regenerate / discard"** — LLM
+output is stochastic, so a weak draft is often just an unlucky roll.
+`regenerate` drafts again with the same model and transcript, looping for
+as many attempts as you want; `discard` ends the session with no note at
+all rather than forcing another attempt. Once you `keep` one, it asks
+**"Copy the note to the clipboard?"**. Enter takes the sensible default
+every time (yes, yes, soap, keep, yes). `--format`, `--no-note`,
+`--clipboard`, `--model` skip the corresponding prompt for scripted use;
+every `live`/`note` flag still applies. This is exactly what
+double-clicking `soapcap.command` runs — see
+[Clickable shortcut](#clickable-shortcut).
 
 ### Pause/resume
 

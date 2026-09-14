@@ -516,20 +516,44 @@ sc_cmd_session() {
 
   if [ "$want_note" -eq 1 ]; then
     sc_need curl
-    sc_info ""
-    sc_info "Drafting a $format note with ${model}…"
-    if sc_generate_note "$format" "$model" "$host" "$transcript"; then
+    local keep_note=0 note_choice
+    while [ "$keep_note" -eq 0 ]; do
       sc_info ""
-      sc_info "----- $format note -----"
-      printf '%s\n' "$SC_NOTE"
-      sc_info "-------------------------"
+      sc_info "Drafting a $format note with ${model}…"
+      if sc_generate_note "$format" "$model" "$host" "$transcript"; then
+        sc_info ""
+        sc_info "----- $format note -----"
+        printf '%s\n' "$SC_NOTE"
+        sc_info "-------------------------"
+        if [ -t 0 ]; then
+          # LLM output is stochastic -- a weak draft is often just an
+          # unlucky roll, so offer another attempt with the same
+          # model/transcript rather than settling for it or re-running the
+          # whole command by hand. A plain yes/no doesn't work here: "no"
+          # would have to mean both "discard this" AND "try again," with
+          # no way to just give up and end the session with no note at
+          # all. Three explicit choices instead, "keep" first so bare
+          # Enter does the safe thing.
+          note_choice=$(sc_choose "This draft:" keep regenerate discard)
+          case "$note_choice" in
+            keep) keep_note=1 ;;
+            discard) SC_NOTE=""; break ;;
+            *) : ;; # regenerate -- loop again
+          esac
+        else
+          keep_note=1
+        fi
+      else
+        sc_err "note generation failed — the transcript above is still yours, nothing lost"
+        break
+      fi
+    done
+    if [ "$keep_note" -eq 1 ] && [ -n "$SC_NOTE" ]; then
       if [ "$clipboard" -eq 1 ]; then
         sc_to_clipboard "$SC_NOTE"
       elif [ -t 0 ]; then
         sc_confirm "Copy the note to the clipboard?" && sc_to_clipboard "$SC_NOTE"
       fi
-    else
-      sc_err "note generation failed — the transcript above is still yours, nothing lost"
     fi
   elif [ "$clipboard" -eq 1 ]; then
     sc_to_clipboard "$transcript"
