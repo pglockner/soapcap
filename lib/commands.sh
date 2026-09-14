@@ -244,6 +244,65 @@ sc_cmd_transcribe() {
   fi
 }
 
+# sc_strip_transcript_echo — safety net: small models sometimes ignore the
+# "don't repeat the transcript" instruction and echo it back after the
+# note. Since the prompt always introduces it with a literal "TRANSCRIPT:"
+# line, cut there if it reappears rather than duplicate PHI into the
+# output. Reads note text on stdin, writes the truncated text on stdout.
+sc_strip_transcript_echo() {
+  awk '/^TRANSCRIPT:[[:space:]]*$/ { exit } { print }'
+}
+
+# sc_strip_contaminated_fallback — safety net: the SOAP prompt's exact
+# required Objective fallback sentence ("No observable presentation
+# details...") is meant to be used ALONE, only when there's nothing to
+# report -- but a model sometimes appends it to the end of a line that
+# already has a real observation on it, producing a self-contradicting
+# sentence. Every observed instance of this puts the fallback on the same
+# line as the real content (never as its own separate paragraph), so
+# strip just the fallback text when a line contains it alongside
+# something else, leaving the real content and the fallback's own correct
+# standalone use untouched.
+sc_strip_contaminated_fallback() {
+  awk -v fb="No observable presentation details available from a text-only transcript." '
+    {
+      if ($0 != fb && index($0, fb) > 0) {
+        line = substr($0, 1, index($0, fb) - 1)
+        sub(/[ \t]+$/, "", line)
+        print line
+      } else {
+        print
+      }
+    }
+  '
+}
+
+# sc_strip_trailing_disclaimer — safety net: seen in the wild — a model
+# appending a trailing aside after Plan editorializing about the
+# transcript itself ("Note: this appears to be a test recording..."),
+# despite the prompt explicitly forbidding closing remarks. Strips
+# exactly one trailing paragraph if its first line looks like that kind
+# of disclaimer. Real Plan content essentially never opens a new
+# paragraph this way, so the false-positive risk is low; leaving it in
+# would mean shipping commentary that doesn't belong in a clinical note.
+sc_strip_trailing_disclaimer() {
+  awk '
+    { lines[NR] = $0 }
+    END {
+      n = NR
+      i = n
+      while (i > 0 && lines[i] == "") i--
+      start = i
+      while (start > 0 && lines[start] != "") start--
+      first = tolower(lines[start + 1])
+      is_aside = (first ~ /^(note|disclaimer|caveat|n\.b\.)[ \t]*[:,-]/) \
+                 || (first ~ /^please note[ \t]*[:,-]/)
+      last_line = (start > 0 && is_aside) ? start : n
+      for (j = 1; j <= last_line; j++) print lines[j]
+    }
+  '
+}
+
 # sc_generate_note <format> <model> <host> <transcript>
 #
 # Asks a local Ollama model to draft a note from a transcript. Talks to
@@ -315,56 +374,11 @@ $transcript"
     sc_err "Ollama returned no content"; return 1
   fi
 
-  # Safety net #1: small models sometimes ignore the "don't repeat the
-  # transcript" instruction and echo it back after the note. Since the
-  # prompt always introduces it with a literal "TRANSCRIPT:" line, cut
-  # there if it reappears rather than duplicate PHI into the output.
-  note=$(printf '%s\n' "$note" | awk '/^TRANSCRIPT:[[:space:]]*$/ { exit } { print }')
-
-  # Safety net #2: the SOAP prompt's exact required Objective fallback
-  # sentence ("No observable presentation details...") is meant to be used
-  # ALONE, only when there's nothing to report -- but a model sometimes
-  # appends it to the end of a line that already has a real observation on
-  # it, producing a self-contradicting sentence. Every observed instance of
-  # this puts the fallback on the same line as the real content (never as
-  # its own separate paragraph), so strip just the fallback text when a
-  # line contains it alongside something else, leaving the real content
-  # and the fallback's own correct standalone use untouched.
-  note=$(printf '%s\n' "$note" | awk -v fb="No observable presentation details available from a text-only transcript." '
-    {
-      if ($0 != fb && index($0, fb) > 0) {
-        line = substr($0, 1, index($0, fb) - 1)
-        sub(/[ \t]+$/, "", line)
-        print line
-      } else {
-        print
-      }
-    }
-  ')
-
-  # Safety net #3: seen in the wild — a model appending a trailing aside
-  # after Plan editorializing about the transcript itself ("Note: this
-  # appears to be a test recording..."), despite the prompt explicitly
-  # forbidding closing remarks. Strip exactly one trailing paragraph if
-  # its first line looks like that kind of disclaimer. Real Plan content
-  # essentially never opens a new paragraph this way, so the false-positive
-  # risk is low; leaving it in would mean shipping commentary that doesn't
-  # belong in a clinical note.
-  SC_NOTE=$(printf '%s\n' "$note" | awk '
-    { lines[NR] = $0 }
-    END {
-      n = NR
-      i = n
-      while (i > 0 && lines[i] == "") i--
-      start = i
-      while (start > 0 && lines[start] != "") start--
-      first = tolower(lines[start + 1])
-      is_aside = (first ~ /^(note|disclaimer|caveat|n\.b\.)[ \t]*[:,-]/) \
-                 || (first ~ /^please note[ \t]*[:,-]/)
-      last_line = (start > 0 && is_aside) ? start : n
-      for (j = 1; j <= last_line; j++) print lines[j]
-    }
-  ')
+  # Three safety nets against known model misbehavior — see each
+  # function's own comment for the specific failure it guards against.
+  note=$(printf '%s\n' "$note" | sc_strip_transcript_echo)
+  note=$(printf '%s\n' "$note" | sc_strip_contaminated_fallback)
+  SC_NOTE=$(printf '%s\n' "$note" | sc_strip_trailing_disclaimer)
   [ -n "$SC_NOTE" ]
 }
 
