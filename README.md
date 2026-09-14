@@ -424,6 +424,11 @@ attempted.
 - [x] `doctor` checks chip/memory/disk and sizes model advice to them
 - [x] Single-key stop (q/x) and real pause/resume (p) while recording
 - [x] Optional gum/fzf: nicer `session` prompts, `note` file picker
+- [ ] Interactive model selection/download — `sc_choose` among pulled
+      Ollama models (with a note-quality/speed/memory hint per option,
+      per the "Draft a note" comparison), offering to `ollama pull` one
+      that isn't local yet, instead of needing `--model`/`ollama pull`
+      run by hand
 - [ ] De-identification pass (local) before any cloud hand-off
 - [ ] `--backend cloud` — POST the de-identified transcript to a
       BAA-covered SOAP API
