@@ -75,6 +75,20 @@ if [ -t 0 ] && [ -d "$HOME/Desktop" ]; then
             ;;
         esac
       fi
+
+      # An update shortcut only makes sense for a git clone -- a
+      # ZIP-downloaded copy has no .git to pull from, and offering a
+      # button that would just error out isn't useful for someone
+      # non-technical relying on this shortcut (e.g. a collaborator
+      # giving feedback).
+      if [ -d "$here/.git" ]; then
+        ln -sf "$here/update.command" "$HOME/Desktop/update.command"
+        echo "==> ~/Desktop/update.command -> $here/update.command"
+        echo "    Double-click it any time to pull the latest soapcap changes."
+        if command -v fileicon >/dev/null 2>&1; then
+          fileicon set "$HOME/Desktop/update.command" "$here/assets/soapcap-update.icns" >/dev/null 2>&1 || true
+        fi
+      fi
       ;;
   esac
 fi

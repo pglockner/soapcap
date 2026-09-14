@@ -303,6 +303,19 @@ brew install fileicon
 fileicon set ~/Desktop/soapcap.command /path/to/soapcap/assets/soapcap.icns
 ```
 
+**Updating**: `update.command` is a second double-clickable shortcut that
+runs `git pull` in the repo — handy for sharing soapcap with someone
+non-technical (a collaborator giving feedback, say) who just needs to grab
+the latest changes without touching the terminal directly. `install.sh`
+only adds this one to the Desktop when the install is an actual git clone
+— a ZIP download has no `.git` to pull from, and the script says so
+plainly rather than erroring if run anyway. By hand:
+
+```sh
+ln -sf /path/to/soapcap/update.command ~/Desktop/update.command
+fileicon set ~/Desktop/update.command /path/to/soapcap/assets/soapcap-update.icns
+```
+
 **Want a real keyboard shortcut?** Not shipped (a `.shortcut` file is a
 binary asset with the same staleness problem), but easy by hand: in
 Shortcuts.app, add a "Run Shell Script" action running
