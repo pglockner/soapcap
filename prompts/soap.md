@@ -28,10 +28,21 @@ Rules:
   been feeling is Subjective even if it names an emotion — "I've been
   anxious all week" is Subjective, "sorry, I'm tearing up right now" is
   Objective.
+- Restate a narrated reaction using its own substance — never upgrade it
+  into a more specific claim that only an actual recording could confirm.
+  If a speaker reports "getting choked up" or "getting emotional," write
+  that; do not escalate it into "voice cracked," "became tearful," "eyes
+  welled up," or similar specifics unless those exact words were used.
+  Never write the kind of sensory stage direction a screenplay puts in
+  action lines or parentheticals ("(voice breaking)," "(wipes away
+  tears)") — you have text, not a recording, and can't supply that detail
+  yourself.
 - If the transcript contains no narrated observation of this kind, the
   ENTIRE OBJECTIVE section must be exactly this sentence, with nothing
   added before or after it: "No observable presentation details available
-  from a text-only transcript."
+  from a text-only transcript." These are mutually exclusive: if you found
+  and wrote a real observation, never also append this fallback sentence
+  afterward — one or the other, never both in the same section.
 - If any other section has no relevant content in the transcript, write
   "Not addressed in this session" for that section instead of guessing or
   padding it out.

@@ -26,7 +26,15 @@ Rules:
   present-tense reaction happening right now counts even in the client's
   own words; a general or past-tense report of how someone has been
   feeling does not, even if it names an emotion — "I've been anxious all
-  week" doesn't count, "sorry, I'm tearing up right now" does. If the
+  week" doesn't count, "sorry, I'm tearing up right now" does. Restate a
+  narrated reaction using its own substance — never upgrade it into a more
+  specific claim that only an actual recording could confirm. If a speaker
+  reports "getting choked up" or "getting emotional," write that; do not
+  escalate it into "voice cracked," "became tearful," "eyes welled up," or
+  similar specifics unless those exact words were used. Never write the
+  kind of sensory stage direction a screenplay puts in action lines or
+  parentheticals ("(voice breaking)," "(wipes away tears)") — you have
+  text, not a recording, and can't supply that detail yourself. If the
   transcript contains no observation of this kind, say so plainly within
   DATA rather than filling the gap.
 - If any other section has no relevant content in the transcript, write
