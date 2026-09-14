@@ -198,6 +198,11 @@ there or miss detail that is. As a backstop, `sc_generate_note` also strips
 an occasional unprompted "Note: ..." aside some models append despite being
 told not to. Both are help, not a guarantee.
 
+`note` sizes Ollama's context window (`num_ctx`) to the actual prompt length
+instead of trusting Ollama's small default — a long transcript that
+exceeded the default silently produced malformed notes (invented section
+headers, repeated paragraphs, PII echoed verbatim) with no error at all.
+
 **Models:**
 
 - **`llama3.1:8b`** (default, ~5GB) — the best balance of reliability and

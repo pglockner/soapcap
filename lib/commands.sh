@@ -282,8 +282,24 @@ sc_generate_note() {
 TRANSCRIPT:
 $transcript"
 
-  payload=$(jq -n --arg model "$model" --arg prompt "$full_prompt" \
-    '{model: $model, prompt: $prompt, stream: false}')
+  # Ollama's context window defaults to a small value (historically 2048)
+  # unless a request explicitly asks for more. A long transcript's prompt
+  # can silently exceed that with no error -- the model just loses part of
+  # the prompt (often the rules, which come first) and produces malformed,
+  # repetitive output with invented section headers. Size num_ctx to the
+  # actual prompt instead of trusting the default: ~1.5 tokens/word as a
+  # safety margin over English's real ~0.75 words/token, plus headroom for
+  # the response, floored at 4096 and capped at 32768.
+  local word_count est_tokens ctx
+  word_count=$(printf '%s' "$full_prompt" | wc -w | tr -d ' ')
+  est_tokens=$(( word_count * 3 / 2 + 1024 ))
+  ctx=4096
+  [ "$est_tokens" -gt "$ctx" ] && ctx=$est_tokens
+  [ "$ctx" -gt 32768 ] && ctx=32768
+  ctx=$(( ( (ctx + 1023) / 1024 ) * 1024 ))
+
+  payload=$(jq -n --arg model "$model" --arg prompt "$full_prompt" --argjson num_ctx "$ctx" \
+    '{model: $model, prompt: $prompt, stream: false, options: {num_ctx: $num_ctx}}')
 
   if ! response=$(curl -s --max-time 300 -X POST "$host/api/generate" \
       -H 'Content-Type: application/json' -d "$payload"); then
