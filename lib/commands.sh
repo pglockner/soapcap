@@ -116,6 +116,73 @@ sc_cmd_doctor() {
 }
 
 # ---------------------------------------------------------------------------
+# sc_model_catalog — one "tag|size|blurb" line per candidate model, for
+# sc_choose_model. llama3.2:3b, llama3.1:8b, and qwen2.5:14b reflect actual
+# testing (see README "Draft a note"). The rest are untested but fall
+# within the same size classes (or the next one up, for 32GB+ systems) —
+# included because they postdate that testing and are worth trying, not
+# because they've been validated against soapcap's prompts.
+sc_model_catalog() {
+  cat <<'EOF'
+llama3.2:3b|~2GB|fastest & lightest, but prone to inventing plausible clinical detail — only worth it under real memory pressure
+llama3.1:8b|~5GB|best balance of reliability and speed (default)
+qwen2.5:14b|~9GB|most reliable at catching real Objective-section detail; ~2.5x slower, wants more RAM headroom
+qwen3:14b|~9GB|newer generation than qwen2.5:14b, but reproduced the Objective-section fabrication these prompts guard against in 2 of 3 test runs — not recommended over qwen2.5:14b
+qwen3:30b|~19GB, wants 32GB+|UNTESTED — mixture-of-experts (3B active params), so faster than its size suggests
+gemma3:27b|~17GB, wants 32GB+|UNTESTED — dense 27B, different failure modes than the Qwen models, worth comparing
+EOF
+}
+
+# sc_choose_model DEFAULT HOST — interactively pick a model from
+# sc_model_catalog, listing DEFAULT first so bare Enter keeps current
+# behavior, and offering to `ollama pull` the pick if it isn't local yet.
+# Prints the chosen tag to stdout either way, so callers can always use the
+# result directly; returns 1 if a needed pull was declined or failed
+# (falling back to DEFAULT rather than handing back an unpulled model).
+sc_choose_model() {
+  local default_model="$1" host="$2" pulled=""
+  pulled=$(curl -s --max-time 3 "$host/api/tags" 2>/dev/null | jq -r '.models[]?.name // empty' 2>/dev/null)
+
+  local tag size blurb status tags=()
+  sc_info "Models:"
+  while IFS='|' read -r tag size blurb; do
+    [ -z "$tag" ] && continue
+    status="not pulled"
+    printf '%s\n' "$pulled" | grep -qx "$tag" && status="pulled"
+    sc_info "  $tag ($size, $status) — $blurb"
+    if [ "$tag" = "$default_model" ]; then
+      tags=("$tag" "${tags[@]}")
+    else
+      tags+=("$tag")
+    fi
+  done <<CATALOG
+$(sc_model_catalog)
+CATALOG
+  case " ${tags[*]-} " in
+    *" $default_model "*) ;;
+    *) tags=("$default_model" "${tags[@]}") ;;
+  esac
+  sc_info ""
+
+  local chosen
+  chosen=$(sc_choose "Model?" "${tags[@]}")
+
+  if ! printf '%s\n' "$pulled" | grep -qx "$chosen"; then
+    if sc_confirm "$chosen isn't pulled yet — pull it now?"; then
+      if ! command -v ollama >/dev/null 2>&1; then
+        sc_err "ollama CLI not found on PATH — install with: brew install ollama"
+        printf '%s\n' "$default_model"; return 1
+      fi
+      ollama pull "$chosen" || { sc_err "pull failed — keeping $default_model"; printf '%s\n' "$default_model"; return 1; }
+    else
+      sc_info "Keeping $default_model."
+      printf '%s\n' "$default_model"; return 1
+    fi
+  fi
+  printf '%s\n' "$chosen"
+}
+
+# ---------------------------------------------------------------------------
 sc_cmd_live() {
   local out="" keepjson="" dedupe=1 clipboard=0
   local mic="$SOAPCAP_MIC_LABEL" sys="$SOAPCAP_SYSTEM_LABEL" locale="$SOAPCAP_LOCALE"
@@ -454,7 +521,7 @@ sc_cmd_note() {
 sc_cmd_session() {
   local mic="$SOAPCAP_MIC_LABEL" sys="$SOAPCAP_SYSTEM_LABEL" locale="$SOAPCAP_LOCALE"
   local dedupe=1 format="" model="$SOAPCAP_MODEL" host="$SOAPCAP_OLLAMA_HOST"
-  local no_note=0 clipboard=0
+  local no_note=0 clipboard=0 model_explicit=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --mic-label)    mic="${2:?}"; shift 2 ;;
@@ -462,7 +529,7 @@ sc_cmd_session() {
       --locale)       locale="${2:?}"; shift 2 ;;
       --no-dedupe)    dedupe=0; shift ;;
       --format)       format="${2:?}"; shift 2 ;;
-      --model)        model="${2:?}"; shift 2 ;;
+      --model)        model="${2:?}"; model_explicit=1; shift 2 ;;
       --host)         host="${2:?}"; shift 2 ;;
       --no-note)      no_note=1; shift ;;
       --clipboard)    clipboard=1; shift ;;
@@ -530,6 +597,10 @@ sc_cmd_session() {
 
   if [ "$want_note" -eq 1 ]; then
     sc_need curl
+    if [ "$model_explicit" -eq 0 ] && [ -t 0 ]; then
+      sc_info ""
+      model=$(sc_choose_model "$model" "$host")
+    fi
     local keep_note=0 note_choice
     while [ "$keep_note" -eq 0 ]; do
       sc_info ""

@@ -217,6 +217,19 @@ headers, repeated paragraphs, PII echoed verbatim) with no error at all.
   reactions. Costs roughly 2.5x the generation time and more RAM headroom;
   occasionally adds a little unstated color rather than bare extraction.
 
+`session` offers an interactive model picker (`soapcap note --model` skips
+it) listing the three above plus newer/larger candidates, checking what's
+already pulled, and offering to `ollama pull` your pick — see
+[`sc_model_catalog`](lib/commands.sh) for the full, current list. One
+entry worth flagging here: **`qwen3:14b`**, the newer generation in
+`qwen2.5:14b`'s size class, reproduced the exact Objective-section
+fabrication these prompts guard against in 2 of 3 test runs against this
+project's own risk-disclosure sample transcript — newer isn't
+automatically better for this task, so it's listed but not recommended
+over `qwen2.5:14b`. Two more (`qwen3:30b`, `gemma3:27b`) are included for
+32GB+ systems but are untested here by necessity — this project's
+development machine only has 16GB.
+
 Other flags: `--host URL`, `--clipboard`.
 
 ### Guided session
@@ -228,7 +241,8 @@ soapcap session
 The scriptable path above assumes you remember the pipe syntax. `session`
 instead captures live, reports the transcript's line count and asks **"Show
 the transcript?"**, then asks **"Draft a note from this?"**, **"Format?"**,
-and after drafting, **"This draft: keep / regenerate / discard"** — LLM
+**"Model?"** (skipped if `--model` was passed), and after drafting, **"This
+draft: keep / regenerate / discard"** — LLM
 output is stochastic, so a weak draft is often just an unlucky roll.
 `regenerate` drafts again with the same model and transcript, looping for
 as many attempts as you want; `discard` ends the session with no note at
@@ -424,11 +438,9 @@ attempted.
 - [x] `doctor` checks chip/memory/disk and sizes model advice to them
 - [x] Single-key stop (q/x) and real pause/resume (p) while recording
 - [x] Optional gum/fzf: nicer `session` prompts, `note` file picker
-- [ ] Interactive model selection/download — `sc_choose` among pulled
-      Ollama models (with a note-quality/speed/memory hint per option,
-      per the "Draft a note" comparison), offering to `ollama pull` one
-      that isn't local yet, instead of needing `--model`/`ollama pull`
-      run by hand
+- [x] Interactive model selection/download — `session` offers a `sc_choose`
+      model picker with a hint per option, offering to `ollama pull` one
+      that isn't local yet
 - [ ] De-identification pass (local) before any cloud hand-off
 - [ ] `--backend cloud` — POST the de-identified transcript to a
       BAA-covered SOAP API
