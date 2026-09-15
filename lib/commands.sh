@@ -508,7 +508,15 @@ $transcript"
   local resp_file rc
   resp_file=$(mktemp) || { sc_err "could not create a temp file"; return 1; }
   if command -v gum >/dev/null 2>&1; then
-    gum spin --title "$title" -- \
+    # TERM_PROGRAM=Apple_Terminal for this one call only: bubbletea (gum's
+    # TUI library) probes terminal capabilities (modes 2026/2027) on every
+    # non-Apple TERM_PROGRAM, and a short-lived spinner can exit before the
+    # terminal's reply arrives, leaking raw "^[[?2026;2$y..." bytes onto
+    # the next prompt in iTerm2/ghostty/kitty/alacritty/wezterm -- a known,
+    # still-open bubbletea bug (github.com/charmbracelet/bubbletea#1590).
+    # Confirmed no other output differs (byte-identical spin apart from
+    # the query itself) before relying on this.
+    TERM_PROGRAM=Apple_Terminal gum spin --title "$title" -- \
       curl -s --max-time 300 -X POST "$host/api/generate" \
         -H 'Content-Type: application/json' -d "$payload" -o "$resp_file"
     rc=$?
