@@ -130,7 +130,6 @@ sc_model_catalog() {
 llama3.2:3b|~2GB|Fastest & lightest; prone to inventing plausible clinical detail. Only worth it under real memory pressure.
 llama3.1:8b|~5GB|Best balance of reliability and speed. (default)
 qwen2.5:14b|~9GB|Most reliable at catching real Objective-section detail. ~2.5x slower, wants more RAM headroom.
-qwen3:14b|~9GB|[not recommended] Newer generation than qwen2.5:14b, but reproduced the Objective-section fabrication these prompts guard against in 2 of 3 test runs.
 qwen3:30b|~19GB (32GB+)|[untested] Mixture-of-experts (3B active params) — faster than its size suggests.
 gemma3:27b|~17GB (32GB+)|[untested] Dense 27B. Different failure modes than the Qwen models, worth comparing.
 EOF
@@ -215,13 +214,14 @@ TABLE
 
   [ -t 0 ] || return 0
 
-  # llama3.1:8b always leads the choices (and is the bare-Enter default),
-  # regardless of catalog order or the currently configured default --
-  # it's the one every install has pulled and the one every other note
-  # has been tested against.
-  local tag tags=("llama3.1:8b")
+  # $SOAPCAP_MODEL always leads the choices (and is the bare-Enter
+  # default), so hitting Enter here never silently changes anything.
+  # It's llama3.1:8b on first-time setup (config.sh's absence just leaves
+  # common.sh's own compiled-in default in place) and whatever was last
+  # saved on every run after that.
+  local tag tags=("$SOAPCAP_MODEL")
   while IFS='|' read -r tag _ _; do
-    [ -z "$tag" ] || [ "$tag" = "llama3.1:8b" ] && continue
+    [ -z "$tag" ] || [ "$tag" = "$SOAPCAP_MODEL" ] && continue
     tags+=("$tag")
   done <<CATALOG
 $(sc_model_catalog)
@@ -505,18 +505,25 @@ $transcript"
     '{model: $model, prompt: $prompt, stream: false, options: {num_ctx: $num_ctx}}')
 
   local title="Drafting a $format note with ${model}…"
-  local resp_file; resp_file=$(mktemp) || { sc_err "could not create a temp file"; return 1; }
+  local resp_file rc
+  resp_file=$(mktemp) || { sc_err "could not create a temp file"; return 1; }
   if command -v gum >/dev/null 2>&1; then
     gum spin --title "$title" -- \
       curl -s --max-time 300 -X POST "$host/api/generate" \
         -H 'Content-Type: application/json' -d "$payload" -o "$resp_file"
+    rc=$?
   else
     sc_info "$title"
     curl -s --max-time 300 -X POST "$host/api/generate" \
       -H 'Content-Type: application/json' -d "$payload" -o "$resp_file"
+    rc=$?
   fi
   response=$(cat "$resp_file"); rm -f "$resp_file"
-  if [ -z "$response" ]; then
+  # A mid-response --max-time timeout (curl exit 28) leaves a non-empty but
+  # partial/invalid file -- check curl's own exit status, not just whether
+  # anything got written, or a timeout gets misreported as "no content"
+  # further down instead of the actionable message here.
+  if [ "$rc" -ne 0 ] || [ -z "$response" ]; then
     sc_err "request to Ollama failed"; return 1
   fi
 

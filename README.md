@@ -215,7 +215,6 @@ headers, repeated paragraphs, PII echoed verbatim) with no error at all.
 | `llama3.1:8b` | ~5GB | Best balance of reliability and speed. **Default.** Doesn't invent observations, but can under-read a client's own present-moment reaction ("I'm getting choked up") as just a general feeling rather than something that happened in the room. |
 | `llama3.2:3b` | ~2GB | Fastest and lightest, but prone to inventing plausible-sounding clinical detail that isn't in the transcript. Only worth it under real memory pressure. |
 | `qwen2.5:14b` | ~9GB | Most reliable at catching real Objective-section detail, including a client's own in-the-moment reactions. ~2.5x the generation time and more RAM headroom; occasionally adds a little unstated color rather than bare extraction. |
-| `qwen3:14b` | ~9GB | **Not recommended over `qwen2.5:14b`.** Newer generation, same size class — but reproduced the exact Objective-section fabrication these prompts guard against in 2 of 3 test runs against this project's own risk-disclosure sample transcript. Newer isn't automatically better for this task. |
 | `qwen3:30b` | ~19GB (32GB+ systems) | **Untested.** Mixture-of-experts (3B active params), so faster than its size suggests. |
 | `gemma3:27b` | ~17GB (32GB+ systems) | **Untested.** Dense 27B; different failure modes than the Qwen models, worth comparing. |
 
