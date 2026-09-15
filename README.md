@@ -67,7 +67,8 @@ cd soapcap
 ./install.sh          # brew install yap jq (force-linked — macOS 26 ships
                        # its own /usr/bin/jq, which can otherwise shadow
                        # Homebrew's), symlink onto PATH, run doctor,
-                       # offer a Desktop shortcut + gum + fzf
+                       # offer a Desktop shortcut + gum + fzf, offer to
+                       # install Ollama and pull llama3.1:8b
 ```
 
 No git installed? Click **Code → Download ZIP** on the
@@ -117,13 +118,17 @@ Ready.
 ```
 
 `ollama`/`gum`/`fzf` lines are informational — `live`/`transcribe` work
-without any of them. To set up `note`:
+without any of them. `install.sh` offers to set up `note` (Ollama +
+`llama3.1:8b`) already; by hand:
 
 ```sh
 brew install ollama
 brew services start ollama       # keeps it running across reboots
 ollama pull llama3.1:8b          # ~5GB, one time
 ```
+
+Change the model `session`/`note` default any time with `soapcap model` —
+see [Draft a note](#draft-a-note).
 
 Optional config: `cp config.example.sh ~/.config/soapcap/config.sh` and edit
 (speaker labels, locale, note model/format, dedupe tuning).
@@ -205,30 +210,25 @@ headers, repeated paragraphs, PII echoed verbatim) with no error at all.
 
 **Models:**
 
-- **`llama3.1:8b`** (default, ~5GB) — the best balance of reliability and
-  speed. Doesn't invent observations, but can under-read a client's own
-  present-moment reaction ("I'm getting choked up") as just a general
-  feeling rather than something that happened in the room.
-- **`llama3.2:3b`** (~2GB) — fastest and lightest, but prone to inventing
-  plausible-sounding clinical detail that isn't in the transcript. Only
-  worth it under real memory pressure.
-- **`qwen2.5:14b`** (~9GB, opt-in via `--model`) — most reliable at catching
-  real Objective-section detail, including a client's own in-the-moment
-  reactions. Costs roughly 2.5x the generation time and more RAM headroom;
-  occasionally adds a little unstated color rather than bare extraction.
+| Model | Size | Notes |
+|---|---|---|
+| `llama3.1:8b` | ~5GB | Best balance of reliability and speed. **Default.** Doesn't invent observations, but can under-read a client's own present-moment reaction ("I'm getting choked up") as just a general feeling rather than something that happened in the room. |
+| `llama3.2:3b` | ~2GB | Fastest and lightest, but prone to inventing plausible-sounding clinical detail that isn't in the transcript. Only worth it under real memory pressure. |
+| `qwen2.5:14b` | ~9GB | Most reliable at catching real Objective-section detail, including a client's own in-the-moment reactions. ~2.5x the generation time and more RAM headroom; occasionally adds a little unstated color rather than bare extraction. |
+| `qwen3:14b` | ~9GB | **Not recommended over `qwen2.5:14b`.** Newer generation, same size class — but reproduced the exact Objective-section fabrication these prompts guard against in 2 of 3 test runs against this project's own risk-disclosure sample transcript. Newer isn't automatically better for this task. |
+| `qwen3:30b` | ~19GB (32GB+ systems) | **Untested.** Mixture-of-experts (3B active params), so faster than its size suggests. |
+| `gemma3:27b` | ~17GB (32GB+ systems) | **Untested.** Dense 27B; different failure modes than the Qwen models, worth comparing. |
 
-`session` offers an interactive model picker (`soapcap note --model` skips
-it) listing the three above plus newer/larger candidates, checking what's
-already pulled, and offering to `ollama pull` your pick — see
-[`sc_model_catalog`](lib/commands.sh) for the full, current list. One
-entry worth flagging here: **`qwen3:14b`**, the newer generation in
-`qwen2.5:14b`'s size class, reproduced the exact Objective-section
-fabrication these prompts guard against in 2 of 3 test runs against this
-project's own risk-disclosure sample transcript — newer isn't
-automatically better for this task, so it's listed but not recommended
-over `qwen2.5:14b`. Two more (`qwen3:30b`, `gemma3:27b`) are included for
-32GB+ systems but are untested here by necessity — this project's
-development machine only has 16GB.
+`qwen3:30b`/`gemma3:27b` are untested here by necessity — this project's
+development machine only has 16GB. See [`sc_model_catalog`](lib/commands.sh)
+for the authoritative, current list (this table mirrors it).
+
+**`soapcap model`** shows this table live (with which models are actually
+pulled) and, interactively, lets you pick one — pulling it via `ollama pull`
+if needed, with an extra confirmation for anything untested — and saves
+the pick as the new default for `session`/`note` (`--model` still overrides
+per-run). `session` itself no longer asks; it just uses whatever's
+configured.
 
 Other flags: `--host URL`, `--clipboard`.
 
@@ -241,17 +241,19 @@ soapcap session
 The scriptable path above assumes you remember the pipe syntax. `session`
 instead captures live, reports the transcript's line count and asks **"Show
 the transcript?"**, then asks **"Draft a note from this?"**, **"Format?"**,
-**"Model?"** (skipped if `--model` was passed), and after drafting, **"This
-draft: keep / regenerate / discard"** — LLM
+and after drafting, **"This draft: keep / regenerate / discard"** — LLM
 output is stochastic, so a weak draft is often just an unlucky roll.
 `regenerate` drafts again with the same model and transcript, looping for
 as many attempts as you want; `discard` ends the session with no note at
 all rather than forcing another attempt. Once you `keep` one, it asks
 **"Copy the note to the clipboard?"**. Enter takes the sensible default
-every time (yes, yes, soap, keep, yes). `--format`, `--no-note`,
-`--clipboard`, `--model` skip the corresponding prompt for scripted use;
-every `live`/`note` flag still applies. This is exactly what
-double-clicking `soapcap.command` runs — see
+every time (yes, yes, soap, keep, yes); without [gum](#nicer-prompts-and-file-picking),
+every prompt also takes a bare first letter when it's unambiguous (`r` for
+regenerate, `b` for birp). `--format`, `--no-note`, `--clipboard`, `--model`
+skip the corresponding prompt for scripted use; every `live`/`note` flag
+still applies. `session` always uses the model configured via
+[`soapcap model`](#draft-a-note) (or `--model`) — it doesn't ask. This is
+exactly what double-clicking `soapcap.command` runs — see
 [Clickable shortcut](#clickable-shortcut).
 
 ### Pause/resume
@@ -438,9 +440,9 @@ attempted.
 - [x] `doctor` checks chip/memory/disk and sizes model advice to them
 - [x] Single-key stop (q/x) and real pause/resume (p) while recording
 - [x] Optional gum/fzf: nicer `session` prompts, `note` file picker
-- [x] Interactive model selection/download — `session` offers a `sc_choose`
-      model picker with a hint per option, offering to `ollama pull` one
-      that isn't local yet
+- [x] Interactive model selection/download — `soapcap model` shows the
+      catalog as a table, offers to `ollama pull` a pick that isn't local
+      yet, and saves it as the new `session`/`note` default
 - [ ] De-identification pass (local) before any cloud hand-off
 - [ ] `--backend cloud` — POST the de-identified transcript to a
       BAA-covered SOAP API

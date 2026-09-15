@@ -77,19 +77,46 @@ sc_confirm() {
 }
 
 # sc_choose HEADER OPTION... — prints the chosen option to stdout. The
-# plain-prompt fallback defaults to the first option on bare Enter.
+# plain-prompt fallback defaults to the first option on bare Enter, and
+# also accepts a bare first letter (e.g. "k" for "keep") when that letter
+# is unambiguous among the options given -- shown bracketed in the prompt
+# ("[k]eep") only when it actually is unambiguous, so the hint is never
+# misleading.
 sc_choose() {
   local header="$1"; shift
   if command -v gum >/dev/null 2>&1; then
     gum choose --header "$header" "$@"
     return
   fi
-  local optstr
-  optstr=$(IFS=/; echo "$*")
-  printf '%s [%s] (default: %s) ' "$header" "$optstr" "$1" >&2
+  local opt lc seen=" " unique=1
+  for opt in "$@"; do
+    lc=$(printf '%s' "${opt:0:1}" | tr '[:upper:]' '[:lower:]')
+    case "$seen" in *" $lc "*) unique=0 ;; esac
+    seen="$seen$lc "
+  done
+  local disp
+  if [ "$unique" -eq 1 ]; then
+    disp=""
+    for opt in "$@"; do
+      disp="${disp:+$disp/}[${opt:0:1}]${opt:1}"
+    done
+  else
+    disp=$(IFS=/; echo "$*")
+  fi
+  printf '%s %s (default: %s) ' "$header" "$disp" "$1" >&2
   local ans=""
   read -r ans || true
-  printf '%s\n' "${ans:-$1}"
+  [ -z "$ans" ] && { printf '%s\n' "$1"; return; }
+  for opt in "$@"; do
+    [ "$ans" = "$opt" ] && { printf '%s\n' "$opt"; return; }
+  done
+  if [ "$unique" -eq 1 ] && [ "${#ans}" -eq 1 ]; then
+    lc=$(printf '%s' "$ans" | tr '[:upper:]' '[:lower:]')
+    for opt in "$@"; do
+      [ "$(printf '%s' "${opt:0:1}" | tr '[:upper:]' '[:lower:]')" = "$lc" ] && { printf '%s\n' "$opt"; return; }
+    done
+  fi
+  printf '%s\n' "$1"
 }
 
 # sc_pick_transcript_file — browses SOAPCAP_TRANSCRIPT_DIR (default $HOME)
@@ -119,6 +146,8 @@ USAGE
   soapcap transcribe FILE [opts]  Transcribe an existing recording -> transcript
   soapcap note [FILE] [opts]      Transcript (FILE or stdin) -> SOAP/DAP/BIRP note
                                   via a local Ollama model
+  soapcap model [--host URL]      Show/pick the model session & note default
+                                  to, pulling it via Ollama if needed
   soapcap session [opts]          Guided: capture, then ask about a note and
                                   the clipboard — what soapcap.command runs
   soapcap version | help

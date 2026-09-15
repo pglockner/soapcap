@@ -116,70 +116,144 @@ sc_cmd_doctor() {
 }
 
 # ---------------------------------------------------------------------------
-# sc_model_catalog — one "tag|size|blurb" line per candidate model, for
-# sc_choose_model. llama3.2:3b, llama3.1:8b, and qwen2.5:14b reflect actual
-# testing (see README "Draft a note"). The rest are untested but fall
-# within the same size classes (or the next one up, for 32GB+ systems) —
-# included because they postdate that testing and are worth trying, not
-# because they've been validated against soapcap's prompts.
+# sc_model_catalog — one "tag|size|note" line per candidate model, for
+# `soapcap model`. llama3.2:3b, llama3.1:8b, and qwen2.5:14b reflect actual
+# testing (see README "Draft a note"). The rest postdate that testing and
+# are worth trying, but a leading marker in `note` says exactly how much to
+# trust them: "[not recommended]" means tested and found worse than an
+# existing option; "[untested]" means never run against soapcap's prompts
+# at all (sc_cmd_model gates pulling one behind an extra confirmation,
+# since that marker specifically means "Objective-section accuracy is
+# unverified," not just "not downloaded yet").
 sc_model_catalog() {
   cat <<'EOF'
-llama3.2:3b|~2GB|fastest & lightest, but prone to inventing plausible clinical detail — only worth it under real memory pressure
-llama3.1:8b|~5GB|best balance of reliability and speed (default)
-qwen2.5:14b|~9GB|most reliable at catching real Objective-section detail; ~2.5x slower, wants more RAM headroom
-qwen3:14b|~9GB|newer generation than qwen2.5:14b, but reproduced the Objective-section fabrication these prompts guard against in 2 of 3 test runs — not recommended over qwen2.5:14b
-qwen3:30b|~19GB, wants 32GB+|UNTESTED — mixture-of-experts (3B active params), so faster than its size suggests
-gemma3:27b|~17GB, wants 32GB+|UNTESTED — dense 27B, different failure modes than the Qwen models, worth comparing
+llama3.2:3b|~2GB|Fastest & lightest; prone to inventing plausible clinical detail. Only worth it under real memory pressure.
+llama3.1:8b|~5GB|Best balance of reliability and speed. (default)
+qwen2.5:14b|~9GB|Most reliable at catching real Objective-section detail. ~2.5x slower, wants more RAM headroom.
+qwen3:14b|~9GB|[not recommended] Newer generation than qwen2.5:14b, but reproduced the Objective-section fabrication these prompts guard against in 2 of 3 test runs.
+qwen3:30b|~19GB (32GB+)|[untested] Mixture-of-experts (3B active params) — faster than its size suggests.
+gemma3:27b|~17GB (32GB+)|[untested] Dense 27B. Different failure modes than the Qwen models, worth comparing.
 EOF
 }
 
-# sc_choose_model DEFAULT HOST — interactively pick a model from
-# sc_model_catalog, listing DEFAULT first so bare Enter keeps current
-# behavior, and offering to `ollama pull` the pick if it isn't local yet.
-# Prints the chosen tag to stdout either way, so callers can always use the
-# result directly; returns 1 if a needed pull was declined or failed
-# (falling back to DEFAULT rather than handing back an unpulled model).
-sc_choose_model() {
-  local default_model="$1" host="$2" pulled=""
+# sc_model_table HOST — prints sc_model_catalog as an aligned, wrapped
+# table (~86 columns) with a live PULLED column, one line at a time to
+# stdout for the caller to route through sc_info.
+sc_model_table() {
+  local host="$1" tag size note status
+  local pulled
   pulled=$(curl -s --max-time 3 "$host/api/tags" 2>/dev/null | jq -r '.models[]?.name // empty' 2>/dev/null)
+  {
+    while IFS='|' read -r tag size note; do
+      [ -z "$tag" ] && continue
+      status="not pulled"
+      printf '%s\n' "$pulled" | grep -qx "$tag" && status="pulled"
+      printf '%s\t%s\t%s\t%s\n' "$tag" "$size" "$status" "$note"
+    done <<CATALOG
+$(sc_model_catalog)
+CATALOG
+  } | awk -F'\t' -v tagw=13 -v sizew=15 -v statw=11 -v notew=44 '
+    function pad(s, w) { return sprintf("%-" w "s", s) }
+    BEGIN {
+      printf "%s %s %s %s\n", pad("MODEL",tagw), pad("SIZE",sizew), pad("STATUS",statw), "NOTES"
+      printf "%s %s %s %s\n", pad("-----",tagw), pad("----",sizew), pad("------",statw), "-----"
+    }
+    {
+      n = split($4, words, " ")
+      line = ""; first = 1
+      for (i = 1; i <= n; i++) {
+        cand = (line == "") ? words[i] : line " " words[i]
+        if (length(cand) > notew && line != "") {
+          if (first) { printf "%s %s %s %s\n", pad($1,tagw), pad($2,sizew), pad($3,statw), line; first = 0 }
+          else       { printf "%s %s %s %s\n", pad("",tagw), pad("",sizew), pad("",statw), line }
+          line = words[i]
+        } else line = cand
+      }
+      if (first) printf "%s %s %s %s\n", pad($1,tagw), pad($2,sizew), pad($3,statw), line
+      else       printf "%s %s %s %s\n", pad("",tagw), pad("",sizew), pad("",statw), line
+    }
+  '
+}
 
-  local tag size blurb status tags=()
-  sc_info "Models:"
-  while IFS='|' read -r tag size blurb; do
-    [ -z "$tag" ] && continue
-    status="not pulled"
-    printf '%s\n' "$pulled" | grep -qx "$tag" && status="pulled"
-    sc_info "  $tag ($size, $status) — $blurb"
-    if [ "$tag" = "$default_model" ]; then
-      tags=("$tag" "${tags[@]}")
-    else
-      tags+=("$tag")
-    fi
+# sc_save_model_config TAG — persists TAG as SOAPCAP_MODEL in config.sh
+# (creating ~/.config/soapcap/config.sh if it doesn't exist yet), so
+# session/note pick it up as the new default without needing --model.
+sc_save_model_config() {
+  local tag="$1" cfg="${SOAPCAP_CONFIG:-$HOME/.config/soapcap/config.sh}"
+  mkdir -p "$(dirname "$cfg")"
+  if [ -f "$cfg" ] && grep -q '^SOAPCAP_MODEL=' "$cfg"; then
+    sed -i '' "s|^SOAPCAP_MODEL=.*|SOAPCAP_MODEL=\"$tag\"|" "$cfg"
+  else
+    printf 'SOAPCAP_MODEL="%s"\n' "$tag" >> "$cfg"
+  fi
+}
+
+# soapcap model [--host URL]
+#
+# Shows the model catalog as a table (with live pulled/not-pulled status)
+# and, with a real terminal, offers to pick one, pulling it via `ollama
+# pull` if needed and saving the pick as the new default for session/note
+# (still overridable per-run with --model). Read-only when not
+# interactive: just prints the table and the current default.
+sc_cmd_model() {
+  local host="$SOAPCAP_OLLAMA_HOST"
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --host)    host="${2:?}"; shift 2 ;;
+      -h|--help) sc_usage; return 0 ;;
+      *) sc_die "model: unknown option: $1" ;;
+    esac
+  done
+
+  sc_need curl; sc_need jq
+  sc_info "Current default: $SOAPCAP_MODEL"
+  sc_info ""
+  while IFS= read -r line; do sc_info "$line"; done <<TABLE
+$(sc_model_table "$host")
+TABLE
+  sc_info ""
+
+  [ -t 0 ] || return 0
+
+  # llama3.1:8b always leads the choices (and is the bare-Enter default),
+  # regardless of catalog order or the currently configured default --
+  # it's the one every install has pulled and the one every other note
+  # has been tested against.
+  local tag tags=("llama3.1:8b")
+  while IFS='|' read -r tag _ _; do
+    [ -z "$tag" ] || [ "$tag" = "llama3.1:8b" ] && continue
+    tags+=("$tag")
   done <<CATALOG
 $(sc_model_catalog)
 CATALOG
-  case " ${tags[*]-} " in
-    *" $default_model "*) ;;
-    *) tags=("$default_model" "${tags[@]}") ;;
-  esac
-  sc_info ""
 
   local chosen
-  chosen=$(sc_choose "Model?" "${tags[@]}")
+  chosen=$(sc_choose "Pick a model:" "${tags[@]}")
 
+  local pulled
+  pulled=$(curl -s --max-time 3 "$host/api/tags" 2>/dev/null | jq -r '.models[]?.name // empty' 2>/dev/null)
   if ! printf '%s\n' "$pulled" | grep -qx "$chosen"; then
-    if sc_confirm "$chosen isn't pulled yet — pull it now?"; then
-      if ! command -v ollama >/dev/null 2>&1; then
-        sc_err "ollama CLI not found on PATH — install with: brew install ollama"
-        printf '%s\n' "$default_model"; return 1
-      fi
-      ollama pull "$chosen" || { sc_err "pull failed — keeping $default_model"; printf '%s\n' "$default_model"; return 1; }
-    else
-      sc_info "Keeping $default_model."
-      printf '%s\n' "$default_model"; return 1
+    local note
+    note=$(sc_model_catalog | awk -F'|' -v t="$chosen" '$1 == t { print $3 }')
+    case "$note" in
+      '[untested]'*)
+        sc_info "$chosen hasn't been run against soapcap's prompts — Objective-section"
+        sc_info "accuracy in particular is unverified (see README \"Draft a note\")."
+        sc_confirm "Pull $chosen anyway?" || { sc_info "Not pulled — default unchanged ($SOAPCAP_MODEL)."; return 1; }
+        ;;
+      *)
+        sc_confirm "$chosen isn't pulled yet — pull it now?" || { sc_info "Not pulled — default unchanged ($SOAPCAP_MODEL)."; return 1; }
+        ;;
+    esac
+    if ! command -v ollama >/dev/null 2>&1; then
+      sc_err "ollama CLI not found on PATH — install with: brew install ollama"
+      return 1
     fi
+    ollama pull "$chosen" || { sc_err "pull failed — default unchanged ($SOAPCAP_MODEL)"; return 1; }
   fi
-  printf '%s\n' "$chosen"
+
+  sc_save_model_config "$chosen"
+  sc_info "Saved — session/note will use $chosen by default (override any time with --model)."
 }
 
 # ---------------------------------------------------------------------------
@@ -376,8 +450,11 @@ sc_strip_trailing_disclaimer() {
 # Ollama's HTTP API directly rather than shelling out to `ollama run` — the
 # CLI renders a spinner/progress UI even when its own stdout isn't a real
 # terminal, which corrupts captured output; the API returns one clean JSON
-# response. On success sets SC_NOTE and returns 0; on failure prints an
-# actionable error via sc_err and returns 1 — it does NOT exit, so a caller
+# response. The curl call itself runs under `gum spin` when available, safe
+# from that same corruption because the response goes straight to a temp
+# file (-o), never through gum's own stdout. On success sets SC_NOTE and
+# returns 0; on failure prints an actionable error via sc_err and returns
+# 1 — it does NOT exit, so a caller
 # holding an already-captured transcript (sc_cmd_session) can report the
 # failure without losing it. sc_cmd_note, which has nothing else at stake,
 # turns that failure straight into sc_die.
@@ -427,8 +504,19 @@ $transcript"
   payload=$(jq -n --arg model "$model" --arg prompt "$full_prompt" --argjson num_ctx "$ctx" \
     '{model: $model, prompt: $prompt, stream: false, options: {num_ctx: $num_ctx}}')
 
-  if ! response=$(curl -s --max-time 300 -X POST "$host/api/generate" \
-      -H 'Content-Type: application/json' -d "$payload"); then
+  local title="Drafting a $format note with ${model}…"
+  local resp_file; resp_file=$(mktemp) || { sc_err "could not create a temp file"; return 1; }
+  if command -v gum >/dev/null 2>&1; then
+    gum spin --title "$title" -- \
+      curl -s --max-time 300 -X POST "$host/api/generate" \
+        -H 'Content-Type: application/json' -d "$payload" -o "$resp_file"
+  else
+    sc_info "$title"
+    curl -s --max-time 300 -X POST "$host/api/generate" \
+      -H 'Content-Type: application/json' -d "$payload" -o "$resp_file"
+  fi
+  response=$(cat "$resp_file"); rm -f "$resp_file"
+  if [ -z "$response" ]; then
     sc_err "request to Ollama failed"; return 1
   fi
 
@@ -521,7 +609,7 @@ sc_cmd_note() {
 sc_cmd_session() {
   local mic="$SOAPCAP_MIC_LABEL" sys="$SOAPCAP_SYSTEM_LABEL" locale="$SOAPCAP_LOCALE"
   local dedupe=1 format="" model="$SOAPCAP_MODEL" host="$SOAPCAP_OLLAMA_HOST"
-  local no_note=0 clipboard=0 model_explicit=0
+  local no_note=0 clipboard=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --mic-label)    mic="${2:?}"; shift 2 ;;
@@ -529,7 +617,7 @@ sc_cmd_session() {
       --locale)       locale="${2:?}"; shift 2 ;;
       --no-dedupe)    dedupe=0; shift ;;
       --format)       format="${2:?}"; shift 2 ;;
-      --model)        model="${2:?}"; model_explicit=1; shift 2 ;;
+      --model)        model="${2:?}"; shift 2 ;;
       --host)         host="${2:?}"; shift 2 ;;
       --no-note)      no_note=1; shift ;;
       --clipboard)    clipboard=1; shift ;;
@@ -597,14 +685,9 @@ sc_cmd_session() {
 
   if [ "$want_note" -eq 1 ]; then
     sc_need curl
-    if [ "$model_explicit" -eq 0 ] && [ -t 0 ]; then
-      sc_info ""
-      model=$(sc_choose_model "$model" "$host")
-    fi
     local keep_note=0 note_choice
     while [ "$keep_note" -eq 0 ]; do
       sc_info ""
-      sc_info "Drafting a $format note with ${model}…"
       if sc_generate_note "$format" "$model" "$host" "$transcript"; then
         sc_info ""
         sc_info "----- $format note -----"

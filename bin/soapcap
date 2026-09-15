@@ -41,6 +41,7 @@ main() {
     live)                 sc_cmd_live "$@" ;;
     transcribe)           sc_cmd_transcribe "$@" ;;
     note)                 sc_cmd_note "$@" ;;
+    model)                sc_cmd_model "$@" ;;
     session)              sc_cmd_session "$@" ;;
     version|-V|--version) printf 'soapcap %s\n' "$SC_VERSION" ;;
     help|-h|--help)       sc_usage ;;

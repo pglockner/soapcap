@@ -115,16 +115,49 @@ if [ -t 0 ] && ! command -v fzf >/dev/null 2>&1; then
   esac
 fi
 
-cat <<'EOF'
+ollama_ready=0
+if [ -t 0 ]; then
+  echo
+  printf "Set up local note drafting now (installs Ollama, downloads llama3.1:8b, ~5GB)? [Y/n] "
+  ans=""
+  read -r ans || true
+  case "$ans" in
+    n|N|no|No) : ;;
+    *)
+      command -v ollama >/dev/null 2>&1 || brew install ollama
+      brew services start ollama >/dev/null 2>&1 || true
+      echo "==> Pulling llama3.1:8b (default model, ~5GB)"
+      if ollama pull llama3.1:8b; then
+        ollama_ready=1
+        # llama3.1:8b is the safe, already-tested default; offer to also
+        # pick/pull one of the other tested models (or, with an extra
+        # warning, an untested larger one for 32GB+ systems) right away.
+        echo
+        "$here/bin/soapcap" model || true
+      fi
+      ;;
+  esac
+fi
+
+if [ "$ollama_ready" -eq 1 ]; then
+  cat <<'EOF'
 
 Next:
-  soapcap session                                     # guided: capture, then
-                                                        # ask about a note
-  cp config.example.sh ~/.config/soapcap/config.sh     # optional config
+  soapcap session                                     # guided: capture, then ask about a note
+  soapcap model                                       # pick/change the note-drafting model
+  cp config.example.sh ~/.config/soapcap/config.sh    # optional config
+EOF
+else
+  cat <<'EOF'
+
+Next:
+  soapcap session                                     # guided: capture, then ask about a note
+  cp config.example.sh ~/.config/soapcap/config.sh    # optional config
 
 To draft notes locally (optional — a ~5GB one-time download):
   brew install ollama
   brew services start ollama
   ollama pull llama3.1:8b
-  soapcap session   # or: soapcap live | soapcap note
+  soapcap session               # or: soapcap live | soapcap note
 EOF
+fi
