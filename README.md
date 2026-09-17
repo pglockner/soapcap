@@ -248,9 +248,12 @@ same placeholder everywhere it's tagged, so a note drafted from the
 result still reads coherently. Speaker labels (`Therapist:`/`Client:`)
 are never touched, even if a label happens to be someone's real name.
 
-Needs the `tools/deidentify-helper` Swift binary — `install.sh` offers to
-build it (needs Xcode Command Line Tools: `xcode-select --install`), or
-build it by hand:
+Needs the `tools/deidentify-helper` Swift binary — `install.sh` checks
+the requirements and offers to build it if they're met (full Xcode, not
+just Command Line Tools — see
+[tools/deidentify-helper/README.md](tools/deidentify-helper/README.md#requirements)
+for the complete list and how much effort each one is), or build it by
+hand:
 
 ```sh
 cd tools/deidentify-helper && swift build -c release
@@ -263,10 +266,11 @@ First real run also downloads the Privacy Filter model's weights
 the rest of soapcap — building it resolves a Swift package dependency
 ([OpenMedKit](https://github.com/maziyarpanahi/openmed)) via `git clone`
 under the hood. Nothing else in soapcap needs git (see [Install](#install)
-— the ZIP-download path works fine for everything else); if you already
-have Xcode Command Line Tools for the build itself, you already have git
-too (it ships as part of CLT), so this isn't an extra install — just
-worth knowing this specific feature reaches out to GitHub during setup.
+— the ZIP-download path works fine for everything else); git comes
+bundled with the full Xcode install this feature already needs, so it
+isn't a separate install — just worth knowing this specific feature
+reaches out to GitHub (and, on first real use, Hugging Face for the
+model weights) during setup.
 
 **This is a best-effort pass, not a certified de-identification.** It
 redacts what OpenMedKit's model tags and nothing more — a missed mention

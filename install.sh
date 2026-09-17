@@ -144,41 +144,36 @@ fi
 
 deidentify_ready=0
 if [ -t 0 ] && [ ! -x "$here/tools/deidentify-helper/.build/release/soapcap-deidentify-helper" ]; then
-  echo
-  printf "Build the local de-identification helper (soapcap deidentify — Swift + OpenMedKit, on-device PII redaction; needs Xcode Command Line Tools)? [Y/n] "
-  ans=""
-  read -r ans || true
-  case "$ans" in
-    n|N|no|No) : ;;
-    *)
-      if ! command -v swift >/dev/null 2>&1; then
-        echo "==> swift not found. Install Xcode Command Line Tools first:"
-        echo "        xcode-select --install"
-        echo "    then re-run install.sh (or build by hand later — see README 'De-identify')."
-      else
-        # A fresh Xcode/CLT install doesn't always include the Metal
-        # Toolchain (needed to compile mlx-swift's GPU shader code) --
-        # confirmed on two separate machines, both failing on the very
-        # first build attempt with the same error. Check and offer this
-        # as its own opt-in step, same shape as every other optional
-        # piece in this script, rather than only reacting to the failure
-        # after the fact.
-        if ! xcrun --find metal >/dev/null 2>&1; then
-          echo
-          printf "Also need the Metal Toolchain to compile this (one-time, ~840MB — Apple's own component, via xcodebuild). Download it now? [Y/n] "
-          ans=""
-          read -r ans || true
-          case "$ans" in
-            n|N|no|No)
-              echo "==> Skipping — the build below will likely fail until you run:"
-              echo "        xcodebuild -downloadComponent MetalToolchain"
-              ;;
-            *)
-              echo "==> Downloading the Metal Toolchain (can take a while on a slow connection)…"
-              xcodebuild -downloadComponent MetalToolchain || true
-              ;;
-          esac
-        fi
+  # Confirmed on two separate machines: plain Xcode Command Line Tools is
+  # NOT enough here (mlx-swift's Metal shaders need the Metal Toolchain
+  # component, and xcodebuild -downloadComponent itself refuses to run
+  # under a CLT-only selection -- "requires Xcode"). Rather than trying
+  # to fix any of this interactively (a full Xcode install is a multi-GB,
+  # App-Store-gated thing install.sh has no business attempting), just
+  # check and point to the real requirements table.
+  deidentify_missing=""
+  command -v swift >/dev/null 2>&1 || deidentify_missing="${deidentify_missing}swift "
+  case "$(xcode-select -p 2>/dev/null)" in
+    *CommandLineTools|"") deidentify_missing="${deidentify_missing}full-Xcode " ;;
+  esac
+  xcrun --find metal >/dev/null 2>&1 || deidentify_missing="${deidentify_missing}Metal-Toolchain "
+
+  if [ -n "$deidentify_missing" ]; then
+    echo
+    echo "==> Skipping the local de-identification helper (soapcap deidentify) —"
+    echo "    missing: $deidentify_missing"
+    echo "    See tools/deidentify-helper/README.md \"Requirements\" for what each"
+    echo "    one needs and how much effort it is (full Xcode, not just Command"
+    echo "    Line Tools, is the big one). Re-run install.sh once they're in"
+    echo "    place, or build by hand later: cd tools/deidentify-helper && swift build -c release"
+  else
+    echo
+    printf "Build the local de-identification helper (soapcap deidentify — Swift + OpenMedKit, on-device PII redaction)? [Y/n] "
+    ans=""
+    read -r ans || true
+    case "$ans" in
+      n|N|no|No) : ;;
+      *)
         echo "==> Building tools/deidentify-helper (swift build -c release)…"
         if (cd "$here/tools/deidentify-helper" && swift build -c release); then
           deidentify_ready=1
@@ -186,13 +181,12 @@ if [ -t 0 ] && [ ! -x "$here/tools/deidentify-helper/.build/release/soapcap-deid
           "$here/tools/deidentify-helper/.build/release/soapcap-deidentify-helper" <<<"warm up" >/dev/null 2>&1 || true
         else
           echo "==> Build failed. If the error mentions a license, run: sudo xcodebuild -license accept"
-          echo "    If it mentions the Metal Toolchain, run: xcodebuild -downloadComponent MetalToolchain"
-          echo "    Otherwise ensure Xcode Command Line Tools are installed (xcode-select --install),"
-          echo "    then re-run install.sh, or build by hand: cd tools/deidentify-helper && swift build -c release"
+          echo "    Otherwise see tools/deidentify-helper/README.md \"Requirements\", then re-run"
+          echo "    install.sh, or build by hand: cd tools/deidentify-helper && swift build -c release"
         fi
-      fi
-      ;;
-  esac
+        ;;
+    esac
+  fi
 fi
 
 next_msg="

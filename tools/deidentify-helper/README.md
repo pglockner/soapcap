@@ -5,24 +5,29 @@ for what it does and how to use it from soapcap itself. This file is just
 the build command and the stdin/stdout contract the bash layer
 (`sc_deidentify_transcript` in `lib/commands.sh`) depends on.
 
-## Build
+## Requirements
+
+Confirmed on two separate machines, not assumed — **plain Xcode Command
+Line Tools alone is not enough.** `install.sh` checks all of these before
+offering to build, and points here (rather than trying to fix them
+itself) if any are missing:
+
+| Requirement | Manual install | Effort |
+|---|---|---|
+| macOS 26+, Apple Silicon | Same as the rest of soapcap — nothing extra | — |
+| **Full Xcode.app** (not just Command Line Tools) | App Store (free), or a signed-in download from developer.apple.com | Large — ~4GB installed (this machine; varies by Xcode version), needs an Apple ID signed in to the App Store, can take a while on a slow connection |
+| Xcode set as the active developer directory | `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` | One command, only needed if a CLT-only install was active before |
+| Metal Toolchain component | `xcodebuild -downloadComponent MetalToolchain` (requires the two rows above first — this command itself refuses to run under a CLT-only selection) | One command, ~840MB one-time download |
+| `git` | Comes bundled with Xcode automatically | None, once Xcode is installed |
+| Network access to `github.com` | — | Needed once, to fetch OpenMedKit and its dependencies via Swift Package Manager during the build |
+| Network access to `huggingface.co` | — | Needed once, to download the Privacy Filter model's weights on first real `soapcap deidentify` run (~129MB) |
+| Disk space | — | ~1.1GB for Swift package checkouts + build products, on top of Xcode itself and the model weights above |
+
+Once everything above is in place:
 
 ```sh
 swift build -c release
 ```
-
-Needs Xcode Command Line Tools (`xcode-select --install`) and, on a fresh
-install, the Metal Toolchain component — confirmed missing by default on
-two separate machines' first build attempt. `install.sh` checks for this
-and offers to fetch it as its own step; building by hand, `swift build`
-does **not** download it automatically and instead fails with:
-
-```
-error: cannot execute tool 'metal' due to missing Metal Toolchain;
-use: xcodebuild -downloadComponent MetalToolchain
-```
-
-Run that exact command (one-time, ~840MB) and retry `swift build`.
 
 The binary lands at `.build/release/soapcap-deidentify-helper`, which is
 exactly where `SOAPCAP_DEIDENTIFY_BIN` (in `lib/common.sh`) expects it.
