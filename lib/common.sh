@@ -18,6 +18,17 @@ SOAPCAP_MODEL="${SOAPCAP_MODEL:-llama3.1:8b}"
 SOAPCAP_FORMAT="${SOAPCAP_FORMAT:-soap}"
 SOAPCAP_OLLAMA_HOST="${SOAPCAP_OLLAMA_HOST:-http://localhost:11434}"
 
+# `deidentify` (local PII redaction via tools/deidentify-helper, built
+# opt-in by install.sh — see README "De-identify"). SC_ROOT is set by
+# bin/soapcap before this file is sourced, but test/run.sh sources this
+# file directly without ever setting SC_ROOT — the inner ${SC_ROOT:-}
+# guard is required, not decorative: without it this line hard-fails
+# under test/run.sh's `set -u` the instant this file is sourced. No
+# separate on/off toggle exists — the binary's absence is the toggle;
+# sc_deidentify_transcript fails closed with an actionable message when
+# it's missing.
+SOAPCAP_DEIDENTIFY_BIN="${SOAPCAP_DEIDENTIFY_BIN:-${SC_ROOT:-}/tools/deidentify-helper/.build/release/soapcap-deidentify-helper}"
+
 _sc_cfg="${SOAPCAP_CONFIG:-$HOME/.config/soapcap/config.sh}"
 # shellcheck source=/dev/null
 [ -f "$_sc_cfg" ] && . "$_sc_cfg"
@@ -146,6 +157,8 @@ USAGE
   soapcap transcribe FILE [opts]  Transcribe an existing recording -> transcript
   soapcap note [FILE] [opts]      Transcript (FILE or stdin) -> SOAP/DAP/BIRP note
                                   via a local Ollama model
+  soapcap deidentify [FILE] [opts]   Transcript (FILE or stdin) -> best-effort
+                                  local PII redaction (needs tools/deidentify-helper)
   soapcap model [--host URL]      Show/pick the model session & note default
                                   to, pulling it via Ollama if needed
   soapcap session [opts]          Guided: capture, then ask about a note and
@@ -175,9 +188,14 @@ OPTIONS (note / session)
 OPTIONS (session only)
   --no-note              Skip drafting a note; just capture and print
 
+OPTIONS (deidentify)
+  --out FILE            Write the de-identified transcript to FILE (default: stdout)
+  --clipboard            Also copy the result to the clipboard (pbcopy)
+
 EXAMPLES
   soapcap session                                    # double-click via soapcap.command
   soapcap live | soapcap note
+  soapcap live | soapcap deidentify | soapcap note
   soapcap transcribe call.m4a | soapcap note --format dap --out note.md
 
 RETENTION

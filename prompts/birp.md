@@ -56,6 +56,20 @@ Rules:
   appears in the transcript. Do not assume or invent anyone's gender —
   use "the client"/"the therapist" (or singular they) unless the
   transcript itself establishes a name or pronoun.
+- If the transcript contains bracketed ALL-CAPS placeholder tokens (e.g.
+  [FIRST_NAME_1], [PHONE_1], [STREET_ADDRESS_1]) inserted by a
+  de-identification pass, treat each one as standing in for a real,
+  specific detail — not as something the transcript never mentioned. For
+  a person, refer to them by role exactly as you would an unnamed party
+  ("the client," "the client's sister," "the referring physician")
+  rather than assuming a name; for other categories, describe the kind
+  of detail in the same generic terms you'd use if it were never
+  mentioned at all ("a phone number was provided"). Never reprint a
+  bracketed token itself in your output, and a bracketed token never
+  counts as the kind of name or pronoun that lets you drop the "the
+  client"/"the therapist" framing above. Two different tokens in the
+  same category ([FIRST_NAME_1] vs. [FIRST_NAME_2]) are two different
+  people — never conflate them.
 - Never comment on the transcript itself — not whether it seems short,
   informal, a test, unusual, or not a "real" session. Document what's
   there using the four sections, even if that's mostly "Not addressed in

@@ -4,7 +4,7 @@
 # then draft a SOAP/DAP/BIRP note from it with a local Ollama model.
 set -u
 
-SC_VERSION="0.1.0"
+SC_VERSION="0.2.0"
 
 # Resolve through symlinks so a PATH symlink still finds lib/.
 _sc_src="${BASH_SOURCE[0]}"
@@ -41,6 +41,7 @@ main() {
     live)                 sc_cmd_live "$@" ;;
     transcribe)           sc_cmd_transcribe "$@" ;;
     note)                 sc_cmd_note "$@" ;;
+    deidentify)           sc_cmd_deidentify "$@" ;;
     model)                sc_cmd_model "$@" ;;
     session)              sc_cmd_session "$@" ;;
     version|-V|--version) printf 'soapcap %s\n' "$SC_VERSION" ;;

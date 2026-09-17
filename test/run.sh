@@ -139,6 +139,64 @@ Continue weekly sessions.
 
 Homework: practice the breathing exercise daily." "$result"
 
+# --- sc_deidentify_transcript --------------------------------------------
+#
+# These test the bash plumbing around tools/deidentify-helper (label
+# strip/reattach, exit-code handling, fail-closed behavior) using stub
+# scripts standing in for the real Swift binary -- the same technique
+# used to stub sc_capture_session elsewhere. OpenMedKit's actual
+# detection accuracy (does it correctly tag a name/phone/address in real
+# English dialogue) is NOT something this harness can or should test --
+# see ~/.config/soapcap/sample-transcripts/ for that manual acceptance
+# pass, run by hand against the documented PII inventory per file.
+
+SOAPCAP_DEIDENTIFY_BIN="/nonexistent/soapcap-deidentify-helper"
+sc_deidentify_transcript "Therapist: Hi Sarah, how are you"
+rc=$?
+assert_eq "deidentify: missing helper fails closed (no transcript set)" "" "$SC_DEIDENTIFY_TRANSCRIPT"
+assert_eq "deidentify: missing helper returns non-zero" "1" "$([ "$rc" -ne 0 ] && echo 1 || echo 0)"
+
+stub=$(mktemp)
+printf '#!/usr/bin/env bash\necho "boom" >&2\nexit 1\n' > "$stub"; chmod +x "$stub"
+SOAPCAP_DEIDENTIFY_BIN="$stub"
+sc_deidentify_transcript "Therapist: Hi Sarah, how are you"
+rc=$?
+assert_eq "deidentify: helper crash fails closed (no transcript set)" "" "$SC_DEIDENTIFY_TRANSCRIPT"
+assert_eq "deidentify: helper crash returns non-zero" "1" "$([ "$rc" -ne 0 ] && echo 1 || echo 0)"
+rm -f "$stub"
+
+stub=$(mktemp)
+printf '#!/usr/bin/env bash\necho "model weights unavailable" >&2\nexit 2\n' > "$stub"; chmod +x "$stub"
+SOAPCAP_DEIDENTIFY_BIN="$stub"
+sc_deidentify_transcript "Therapist: Hi Sarah, how are you"
+rc=$?
+assert_eq "deidentify: helper exit-2 (no weights) fails closed" "" "$SC_DEIDENTIFY_TRANSCRIPT"
+assert_eq "deidentify: helper exit-2 returns non-zero" "1" "$([ "$rc" -ne 0 ] && echo 1 || echo 0)"
+rm -f "$stub"
+
+stub=$(mktemp)
+printf '#!/usr/bin/env bash\ncat\necho "no entities detected" >&2\n' > "$stub"; chmod +x "$stub"
+SOAPCAP_DEIDENTIFY_BIN="$stub"
+sc_deidentify_transcript "Therapist: How was your week"
+assert_eq "deidentify: zero detections leaves transcript unchanged" \
+  "Therapist: How was your week" "$SC_DEIDENTIFY_TRANSCRIPT"
+assert_eq "deidentify: zero detections' summary relayed" \
+  "no entities detected" "$SC_DEIDENTIFY_SUMMARY"
+rm -f "$stub"
+
+# A stub that just uppercases its input: if the speaker label ever leaked
+# through to the helper, it would come back uppercased too -- this
+# specifically catches that failure mode, not just "does re-zipping work."
+stub=$(mktemp)
+printf '#!/usr/bin/env bash\ntr "[:lower:]" "[:upper:]"\necho "redacted 0 span(s)" >&2\n' > "$stub"; chmod +x "$stub"
+SOAPCAP_DEIDENTIFY_BIN="$stub"
+sc_deidentify_transcript "Sarah: hi there, with Camila.
+Client: second line here."
+assert_eq "deidentify: speaker label never sent to the helper, multi-line reassembly correct" \
+  "Sarah: HI THERE, WITH CAMILA.
+Client: SECOND LINE HERE." "$SC_DEIDENTIFY_TRANSCRIPT"
+rm -f "$stub"
+
 echo
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

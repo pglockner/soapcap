@@ -139,25 +139,61 @@ if [ -t 0 ]; then
   esac
 fi
 
+deidentify_ready=0
+if [ -t 0 ] && [ ! -x "$here/tools/deidentify-helper/.build/release/soapcap-deidentify-helper" ]; then
+  echo
+  printf "Build the local de-identification helper (soapcap deidentify — Swift + OpenMedKit, on-device PII redaction; needs Xcode Command Line Tools)? [Y/n] "
+  ans=""
+  read -r ans || true
+  case "$ans" in
+    n|N|no|No) : ;;
+    *)
+      if ! command -v swift >/dev/null 2>&1; then
+        echo "==> swift not found. Install Xcode Command Line Tools first:"
+        echo "        xcode-select --install"
+        echo "    then re-run install.sh (or build by hand later — see README 'De-identify')."
+      else
+        echo "==> Building tools/deidentify-helper (swift build -c release)…"
+        if (cd "$here/tools/deidentify-helper" && swift build -c release); then
+          deidentify_ready=1
+          echo "==> Built. Warming up (downloads the privacy-filter model's weights once, no transcript data involved)…"
+          "$here/tools/deidentify-helper/.build/release/soapcap-deidentify-helper" <<<"warm up" >/dev/null 2>&1 || true
+        else
+          echo "==> Build failed. If the error mentions a license, run: sudo xcodebuild -license accept"
+          echo "    Otherwise ensure Xcode Command Line Tools are installed (xcode-select --install),"
+          echo "    then re-run install.sh, or build by hand: cd tools/deidentify-helper && swift build -c release"
+        fi
+      fi
+      ;;
+  esac
+fi
+
+next_msg="
+Next:
+  soapcap session                                     # guided: capture, then ask about a note"
 if [ "$ollama_ready" -eq 1 ]; then
-  cat <<'EOF'
-
-Next:
-  soapcap session                                     # guided: capture, then ask about a note
-  soapcap model                                       # pick/change the note-drafting model
-  cp config.example.sh ~/.config/soapcap/config.sh    # optional config
-EOF
-else
-  cat <<'EOF'
-
-Next:
-  soapcap session                                     # guided: capture, then ask about a note
-  cp config.example.sh ~/.config/soapcap/config.sh    # optional config
+  next_msg="$next_msg
+  soapcap model                                       # pick/change the note-drafting model"
+fi
+if [ "$deidentify_ready" -eq 1 ]; then
+  next_msg="$next_msg
+  soapcap deidentify FILE                             # best-effort local PII redaction"
+fi
+next_msg="$next_msg
+  cp config.example.sh ~/.config/soapcap/config.sh    # optional config"
+if [ "$ollama_ready" -ne 1 ]; then
+  next_msg="$next_msg
 
 To draft notes locally (optional — a ~5GB one-time download):
   brew install ollama
   brew services start ollama
   ollama pull llama3.1:8b
-  soapcap session               # or: soapcap live | soapcap note
-EOF
+  soapcap session               # or: soapcap live | soapcap note"
 fi
+if [ "$deidentify_ready" -ne 1 ]; then
+  next_msg="$next_msg
+
+To build the (optional) local de-identification helper later:
+  cd tools/deidentify-helper && swift build -c release"
+fi
+printf '%s\n' "$next_msg"

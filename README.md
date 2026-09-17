@@ -231,6 +231,51 @@ configured.
 
 Other flags: `--host URL`, `--clipboard`.
 
+### De-identify
+
+```sh
+soapcap live | soapcap deidentify | soapcap note
+soapcap deidentify ~/sessions/2026-09-10.transcript --out ~/sessions/2026-09-10.deid.transcript
+```
+
+Runs a transcript through a small **on-device** PII detection model
+([OpenMedKit](https://github.com/maziyarpanahi/openmed)'s Privacy Filter,
+via Apple's MLX runtime — Apple Silicon only, same as the rest of
+soapcap) and replaces detected names, phone numbers, emails, addresses,
+and similar identifiers with consistent bracketed placeholders
+(`[FIRST_NAME_1]`, `[PHONE_1]`, …) — the same person or detail gets the
+same placeholder everywhere it's tagged, so a note drafted from the
+result still reads coherently. Speaker labels (`Therapist:`/`Client:`)
+are never touched, even if a label happens to be someone's real name.
+
+Needs the `tools/deidentify-helper` Swift binary — `install.sh` offers to
+build it (needs Xcode Command Line Tools: `xcode-select --install`), or
+build it by hand:
+
+```sh
+cd tools/deidentify-helper && swift build -c release
+```
+
+First real run also downloads the Privacy Filter model's weights
+(one-time, no transcript data involved).
+
+**This one feature does need git and network access to GitHub**, unlike
+the rest of soapcap — building it resolves a Swift package dependency
+([OpenMedKit](https://github.com/maziyarpanahi/openmed)) via `git clone`
+under the hood. Nothing else in soapcap needs git (see [Install](#install)
+— the ZIP-download path works fine for everything else); if you already
+have Xcode Command Line Tools for the build itself, you already have git
+too (it ships as part of CLT), so this isn't an extra install — just
+worth knowing this specific feature reaches out to GitHub during setup.
+
+**This is a best-effort pass, not a certified de-identification.** It
+redacts what OpenMedKit's model tags and nothing more — a missed mention
+stays in the output verbatim, and the output is still confidential
+clinical material. Read it before sending it anywhere. See
+[Legal](#legal--read-before-first-use).
+
+Other flags: `--out FILE`, `--clipboard`.
+
 ### Guided session
 
 ```sh
@@ -426,6 +471,13 @@ attempted.
 - Sending anything to a **third-party service** (SoapNoteAI, Upheal, an
   API) means a signed **Business Associate Agreement** with that vendor.
   The local-model path avoids this; a future cloud path would not.
+- **De-identification (`soapcap deidentify`) is a best-effort local pass,
+  not a certified de-identification.** It is not HIPAA Safe Harbor
+  de-identification and has not gone through Expert Determination — it's
+  an on-device PII-tagging model that catches what it catches. Its output
+  remains confidential clinical material, not something cleared for a
+  hand-off a real BAA would otherwise require, and should always be
+  reviewed before being sent anywhere.
 - Not affiliated with Zoom, Apple, SoapNoteAI, Upheal, or any EHR. No
   warranty. See `LICENSE`.
 
@@ -442,7 +494,7 @@ attempted.
 - [x] Interactive model selection/download — `soapcap model` shows the
       catalog as a table, offers to `ollama pull` a pick that isn't local
       yet, and saves it as the new `session`/`note` default
-- [ ] De-identification pass (local) before any cloud hand-off
+- [x] `soapcap deidentify` — best-effort local PII redaction before any hand-off
 - [ ] `--backend cloud` — POST the de-identified transcript to a
       BAA-covered SOAP API
 - [ ] `soapcap record` — the one path that *must* keep audio briefly, for

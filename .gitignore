@@ -27,3 +27,8 @@ config.sh
 
 # Local development notes (not for public history — see the file itself)
 DEV_NOTES.local.md
+
+# Swift package build output (tools/deidentify-helper) — Package.resolved
+# IS tracked, pinning exact dependency versions for reproducible builds.
+tools/deidentify-helper/.build/
+tools/deidentify-helper/.swiftpm/
