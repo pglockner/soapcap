@@ -503,11 +503,6 @@ attempted.
       BAA-covered SOAP API
 - [ ] `soapcap record` — the one path that *must* keep audio briefly, for
       Upheal (audio-only intake); capture to a temp `.m4a`, upload, delete
-- [ ] Windows support — blocked on capture/speaker-attribution, not the
-      note-drafting side (Ollama is already cross-platform); yap/Apple
-      SpeechAnalyzer has no Windows equivalent, so this needs a different
-      on-device STT engine plus a separate answer for splitting mic vs.
-      system audio and attributing speakers
 
 ---
 
