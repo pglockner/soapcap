@@ -52,6 +52,37 @@ sc_need() {
   command -v "$1" >/dev/null 2>&1 || sc_die "required tool not found on PATH: $1"
 }
 
+# ---- alternate screen (soapcap session's guided display only) --------------
+# Content drawn to the terminal's alternate screen buffer (what vim/less/htop
+# use) is excluded from normal scrollback -- and therefore from
+# window/session-restoration snapshots some terminal apps persist to disk
+# independently of anything soapcap writes itself. sc_cmd_session displays a
+# transcript and a drafted note, both PHI, directly on the terminal; without
+# this, "nothing here was written to disk" was only ever a claim about
+# soapcap's own files, not about the terminal app hosting the session.
+sc_alt_screen_start() {
+  [ -t 1 ] || return 0
+  command -v tput >/dev/null 2>&1 || return 0
+  tput smcup 2>/dev/null && SC_ALT_SCREEN=1
+  return 0
+}
+
+# Also where the "press Enter" pause lives, not at the end of
+# sc_cmd_session -- this runs from the same top-level EXIT trap that fires
+# on every exit path, so an early sc_die() mid-session (capture failure, no
+# speech detected, etc.) still gives the user a chance to read whatever was
+# on screen before it vanishes, not just a clean finish.
+sc_alt_screen_stop() {
+  [ "${SC_ALT_SCREEN:-0}" = "1" ] || return 0
+  if [ -t 0 ]; then
+    printf '\nPress Enter to return to your normal terminal screen…' >&2
+    read -r _ || true
+  fi
+  tput rmcup 2>/dev/null
+  SC_ALT_SCREEN=0
+  return 0
+}
+
 # sc_to_clipboard TEXT — best-effort copy to the macOS clipboard via pbcopy.
 # Note this is another place PHI can linger: most clipboard managers keep
 # history. See README "Retention".

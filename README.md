@@ -287,19 +287,33 @@ soapcap session
 ```
 
 The scriptable path above assumes you remember the pipe syntax. `session`
-instead captures live, reports the transcript's line count and asks **"Show
+runs its whole guided flow on the terminal's alternate screen buffer (see
+[Retention](#retention)) — expect the screen to look like a full-screen app
+and to clear when you're done, pressing Enter at the final prompt to
+return to your normal terminal. It captures live, reports the transcript's
+line count and asks **"Show
 the transcript?"**, then asks **"Draft a note from this?"**, **"Format?"**,
-and after drafting, **"This draft: keep / regenerate / discard"** — LLM
-output is stochastic, so a weak draft is often just an unlucky roll.
-`regenerate` drafts again with the same model and transcript, looping for
-as many attempts as you want; `discard` ends the session with no note at
-all rather than forcing another attempt. Once you `keep` one, it asks
-**"Copy the note to the clipboard?"**. Enter takes the sensible default
-every time (yes, yes, soap, keep, yes); without [gum](#nicer-prompts-and-file-picking),
+and — if the [de-identify](#de-identify) helper is built — **"Run the
+drafted note through the local de-identifier before showing it?"** (asked
+once, applied to every regenerate attempt below, not re-asked each time).
+This checks the *note*, not the transcript — an independent, best-effort
+second pass, since the note-drafting model can occasionally restate or
+infer identifying details even from a clean transcript; it's not a
+substitute for de-identifying the transcript first if that matters for
+your use case. After drafting, it asks **"This draft: keep / regenerate /
+discard"** — LLM output is stochastic, so a weak draft is often just an
+unlucky roll. `regenerate` drafts again with the same model and
+transcript, looping for as many attempts as you want; `discard` ends the
+session with no note at all rather than forcing another attempt. Choosing
+`keep` copies the note to the clipboard right away — no separate confirm,
+since `keep` is already the answer to "do you want this." Enter takes the
+sensible default every time (yes, yes, soap, [yes,] keep) — the bracketed
+de-identify default only applies when that prompt appears; without [gum](#nicer-prompts-and-file-picking),
 every prompt also takes a bare first letter when it's unambiguous (`r` for
-regenerate, `b` for birp). `--format`, `--no-note`, `--clipboard`, `--model`
-skip the corresponding prompt for scripted use; every `live`/`note` flag
-still applies. `session` always uses the model configured via
+regenerate, `b` for birp). `--format`, `--no-note`, `--model` skip the
+corresponding prompt for scripted use; `--clipboard` forces the copy on a
+non-interactive run (where there's no `keep` choice to trigger it
+automatically). Every `live`/`note` flag still applies. `session` always uses the model configured via
 [`soapcap model`](#draft-a-note) (or `--model`) — it doesn't ask. This is
 exactly what double-clicking `soapcap.command` runs — see
 [Clickable shortcut](#clickable-shortcut).
@@ -453,6 +467,16 @@ attempted.
   keeping it on an encrypted volume, is the safe path.
 - Your **terminal scrollback** holds whatever printed to stdout. Clear it
   (`Cmd-K`) after copying a transcript or note if you didn't use `--out`.
+  This applies to `live`/`note`/`transcribe`/`deidentify` run directly at a
+  terminal — `session` is the exception: it draws its guided flow (including
+  the transcript and drafted note) to the terminal's **alternate screen
+  buffer**, the same mechanism `vim`/`less`/`htop` use, specifically so it
+  never lands in normal scrollback in the first place. That matters because
+  scrollback isn't just "things you can scroll back to" — some terminal
+  apps periodically snapshot window/session state to disk for their own
+  restore-on-relaunch feature, independent of anything soapcap writes; the
+  alternate screen buffer is excluded from that too. The screen clears when
+  `session` ends (press Enter when prompted) — that's expected, not a bug.
 - **`soapcap note` stays local** — the transcript goes to Ollama over
   `localhost` only. The note is PHI exactly like the transcript: stdout by
   default, disk only with `--out`.
@@ -503,6 +527,12 @@ attempted.
       BAA-covered SOAP API
 - [ ] `soapcap record` — the one path that *must* keep audio briefly, for
       Upheal (audio-only intake); capture to a temp `.m4a`, upload, delete
+- [ ] Richer `session` UI via a real TUI ([bubbletea](https://github.com/charmbracelet/bubbletea),
+      the library `gum` itself is built on), opt-in — today's alternate-screen
+      fix (see [Retention](#retention)) is the safety-critical baseline and
+      stays either way; a full TUI would be a nicer layer on top of it,
+      matching how gum/fzf are already optional today rather than a hard
+      requirement
 
 ---
 

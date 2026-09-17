@@ -109,6 +109,7 @@ sc_cmd_doctor() {
     sc_info "  ok    de-identify helper built and runs ($SOAPCAP_DEIDENTIFY_BIN)"
   else
     sc_info "  --    de-identify helper not built — only needed for 'soapcap deidentify'"
+    sc_info "        (and the optional note de-identify offer in 'soapcap session')"
     sc_info "        build with: cd tools/deidentify-helper && swift build -c release"
     sc_info "        (or re-run install.sh)"
   fi
@@ -786,6 +787,12 @@ sc_cmd_session() {
 
   sc_need yap; sc_need jq
 
+  # Everything from here on can include PHI (transcript, drafted note) --
+  # draw it to the terminal's alternate screen buffer so none of it lands
+  # in normal scrollback or a terminal app's session-restore snapshot. See
+  # Retention in the README and sc_alt_screen_start's comment.
+  sc_alt_screen_start
+
   sc_info "soapcap session — guided capture"
   sc_info "  • Use headphones so your mic does not pick up the other party."
   sc_info "  • Turn on Do Not Disturb; system audio capture records the whole mix."
@@ -843,10 +850,27 @@ sc_cmd_session() {
 
   if [ "$want_note" -eq 1 ]; then
     sc_need curl
+    # Asked once, before the regenerate loop, not per-attempt -- the
+    # transcript is what changed hands (via note-drafting), the note is
+    # local output, and re-asking on every "regenerate" would just be
+    # noise for a choice that isn't expected to change mid-loop.
+    local deidentify_note=0
+    if [ -t 0 ] && [ -x "$SOAPCAP_DEIDENTIFY_BIN" ]; then
+      sc_info ""
+      sc_confirm "Run the drafted note through the local de-identifier before showing it?" && deidentify_note=1
+    fi
     local keep_note=0 note_choice
     while [ "$keep_note" -eq 0 ]; do
       sc_info ""
       if sc_generate_note "$format" "$model" "$host" "$transcript"; then
+        if [ "$deidentify_note" -eq 1 ]; then
+          if sc_deidentify_transcript "$SC_NOTE"; then
+            SC_NOTE="$SC_DEIDENTIFY_TRANSCRIPT"
+            sc_info "$SC_DEIDENTIFY_SUMMARY"
+          else
+            sc_err "de-identify failed — showing the note as drafted instead (see above)"
+          fi
+        fi
         sc_info ""
         sc_info "----- $format note -----"
         printf '%s\n' "$SC_NOTE"
@@ -874,12 +898,11 @@ sc_cmd_session() {
         break
       fi
     done
-    if [ "$keep_note" -eq 1 ] && [ -n "$SC_NOTE" ]; then
-      if [ "$clipboard" -eq 1 ]; then
-        sc_to_clipboard "$SC_NOTE"
-      elif [ -t 0 ]; then
-        sc_confirm "Copy the note to the clipboard?" && sc_to_clipboard "$SC_NOTE"
-      fi
+    # "keep" is itself the user's answer to "do you want this" -- a
+    # separate clipboard confirm right after was redundant in practice
+    # (confirmed by hands-on testing), so keeping now copies directly.
+    if [ "$keep_note" -eq 1 ] && [ -n "$SC_NOTE" ] && { [ "$clipboard" -eq 1 ] || [ -t 0 ]; }; then
+      sc_to_clipboard "$SC_NOTE"
     fi
   elif [ "$clipboard" -eq 1 ]; then
     sc_to_clipboard "$transcript"
@@ -887,4 +910,7 @@ sc_cmd_session() {
 
   sc_info ""
   sc_info "Nothing here was written to disk unless you redirected it yourself."
+  if [ "${SC_ALT_SCREEN:-0}" = "1" ]; then
+    sc_info "This screen won't appear in your terminal's scrollback."
+  fi
 }

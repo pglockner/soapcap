@@ -21,6 +21,7 @@ unset _sc_src _sc_dir
 
 SC_WORKDIR=""
 SC_JSON=""
+SC_ALT_SCREEN=0
 
 # shellcheck source=lib/common.sh
 . "$SC_ROOT/lib/common.sh"
@@ -31,7 +32,7 @@ SC_JSON=""
 # shellcheck source=lib/commands.sh
 . "$SC_ROOT/lib/commands.sh"
 
-trap 'sc_cleanup' EXIT
+trap 'sc_alt_screen_stop; sc_cleanup' EXIT
 
 main() {
   local cmd="${1:-help}"
