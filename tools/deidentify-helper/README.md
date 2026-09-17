@@ -11,10 +11,18 @@ the build command and the stdin/stdout contract the bash layer
 swift build -c release
 ```
 
-Needs Xcode Command Line Tools (`xcode-select --install`) and, the first
-time, downloads a Metal Toolchain component if Xcode doesn't already have
-one (`xcodebuild -downloadComponent MetalToolchain` — `swift build` does
-this itself, but expect a large one-time download if it's missing).
+Needs Xcode Command Line Tools (`xcode-select --install`) and, on a fresh
+install, the Metal Toolchain component — confirmed missing by default on
+two separate machines' first build attempt. `install.sh` checks for this
+and offers to fetch it as its own step; building by hand, `swift build`
+does **not** download it automatically and instead fails with:
+
+```
+error: cannot execute tool 'metal' due to missing Metal Toolchain;
+use: xcodebuild -downloadComponent MetalToolchain
+```
+
+Run that exact command (one-time, ~840MB) and retry `swift build`.
 
 The binary lands at `.build/release/soapcap-deidentify-helper`, which is
 exactly where `SOAPCAP_DEIDENTIFY_BIN` (in `lib/common.sh`) expects it.

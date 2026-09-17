@@ -69,12 +69,19 @@ sc_to_clipboard() {
 # `read`-based prompt (or a clear error) when the tool isn't installed —
 # soapcap never requires either. Callers are expected to already know
 # stdin is a real terminal (guard with `[ -t 0 ]`) before calling these.
+#
+# SOAPCAP_NO_GUM=1 forces the plain-prompt path in both functions below
+# even when gum is present -- install.sh sets this for its one call into
+# `soapcap model` (which would otherwise use gum, freshly installed by an
+# earlier install.sh prompt, for that single interaction) so the whole
+# installer stays plain-text throughout rather than switching styles
+# partway through.
 
 # sc_confirm PROMPT — asks a yes/no question, defaulting to yes on bare
 # Enter either way. Returns 0 for yes, 1 for no.
 sc_confirm() {
   local prompt="$1"
-  if command -v gum >/dev/null 2>&1; then
+  if [ -z "${SOAPCAP_NO_GUM:-}" ] && command -v gum >/dev/null 2>&1; then
     gum confirm "$prompt"
     return $?
   fi
@@ -95,7 +102,7 @@ sc_confirm() {
 # misleading.
 sc_choose() {
   local header="$1"; shift
-  if command -v gum >/dev/null 2>&1; then
+  if [ -z "${SOAPCAP_NO_GUM:-}" ] && command -v gum >/dev/null 2>&1; then
     gum choose --header "$header" "$@"
     return
   fi
