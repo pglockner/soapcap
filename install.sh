@@ -156,7 +156,10 @@ if [ -t 0 ] && [ ! -x "$here/tools/deidentify-helper/.build/release/soapcap-deid
   case "$(xcode-select -p 2>/dev/null)" in
     *CommandLineTools|"") deidentify_missing="${deidentify_missing}full-Xcode " ;;
   esac
-  xcrun --find metal >/dev/null 2>&1 || deidentify_missing="${deidentify_missing}Metal-Toolchain "
+  # `xcrun --find metal` only locates a binary -- on a CLT-only-turned-full-Xcode
+  # machine it can find a stub that itself refuses to run until the Metal
+  # Toolchain component is actually downloaded. Invoke it for real instead.
+  xcrun metal --version >/dev/null 2>&1 || deidentify_missing="${deidentify_missing}Metal-Toolchain "
 
   if [ -n "$deidentify_missing" ]; then
     echo

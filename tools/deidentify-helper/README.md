@@ -17,6 +17,7 @@ itself) if any are missing:
 | macOS 26+, Apple Silicon | Same as the rest of soapcap — nothing extra | — |
 | **Full Xcode.app** (not just Command Line Tools) | App Store (free), or a signed-in download from developer.apple.com | Large — ~4GB installed (this machine; varies by Xcode version), needs an Apple ID signed in to the App Store, can take a while on a slow connection |
 | Xcode set as the active developer directory | `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` | One command, only needed if a CLT-only install was active before |
+| Xcode's license accepted | Open Xcode.app once (GUI) — it prompts for the license on first launch. It also offers to install additional components/simulators; decline, they're not needed for this build. | One-time GUI step, a couple minutes. `sudo xcodebuild -license accept` works too if you'd rather not open the GUI. |
 | Metal Toolchain component | `xcodebuild -downloadComponent MetalToolchain` (requires the two rows above first — this command itself refuses to run under a CLT-only selection) | One command, ~840MB one-time download |
 | `git` | Comes bundled with Xcode automatically | None, once Xcode is installed |
 | Network access to `github.com` | — | Needed once, to fetch OpenMedKit and its dependencies via Swift Package Manager during the build |
@@ -79,6 +80,18 @@ project's sample-transcript corpus (`~/.config/soapcap/sample-transcripts/`):
   category-labeling wrinkle, not a leak.
 - One idiom ("white-knuckling") had "white" flagged and redacted — a
   benign false positive (safe-direction over-redaction, not a miss).
+- **Span boundaries can differ across machines for the same input.**
+  Confirmed by running the full 7-file corpus on two different Apple
+  Silicon Macs (same code, same model weights): 6 of 7 files were
+  byte-for-byte identical, but one phone number (`555-0199`) got a
+  partial redaction on one machine — `555[PHONE_1]` instead of
+  `[PHONE_1]` — because the detected span started 3 characters later
+  than it did on the other machine. Same input, same weights, different
+  hardware, different exact boundary. This means a clean run on one Mac
+  doesn't guarantee a clean run on another; there's no known way to
+  detect this class of partial leak from the summary line alone (it
+  still reports `PHONE x1` either way) — only a byte-level diff of the
+  actual output caught it here.
 
 This is exactly why `soapcap deidentify` is documented as best-effort,
 not certified — see the main README's Legal section. Don't "fix" the
