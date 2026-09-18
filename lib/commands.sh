@@ -819,6 +819,25 @@ sc_cmd_session() {
 
   sc_info ""
   sc_info "Transcript: $line_count line(s)."
+
+  # One all-or-nothing question, asked once and only when the helper is
+  # built. It comes before "Show the transcript?" so that what's printed
+  # to the screen is already the redacted text. Yes redacts the transcript
+  # here (everything downstream -- display, drafting, clipboard -- then
+  # uses the redacted version) and the drafted note again before it's shown.
+  local deidentify=0
+  if [ -t 0 ] && [ -x "$SOAPCAP_DEIDENTIFY_BIN" ]; then
+    sc_confirm "De-identify the transcript now, and the note once it's drafted?" && deidentify=1
+  fi
+  if [ "$deidentify" -eq 1 ]; then
+    if sc_deidentify_transcript "$transcript"; then
+      transcript="$SC_DEIDENTIFY_TRANSCRIPT"
+      sc_info "transcript: $SC_DEIDENTIFY_SUMMARY"
+    else
+      sc_err "transcript de-identify failed — continuing with the original transcript (see above)"
+    fi
+  fi
+
   local show_transcript=1
   [ -t 0 ] && { sc_confirm "Show the transcript?" || show_transcript=0; }
   if [ "$show_transcript" -eq 1 ]; then
@@ -837,7 +856,11 @@ sc_cmd_session() {
     want_note=1
   elif [ -t 0 ]; then
     sc_info ""
-    sc_confirm "Draft a note from this?" && want_note=1
+    if [ "$deidentify" -eq 1 ]; then
+      sc_confirm "Draft a de-identified note from this?" && want_note=1
+    else
+      sc_confirm "Draft a note from this?" && want_note=1
+    fi
   fi
 
   if [ "$want_note" -eq 1 ] && [ -z "$format" ]; then
@@ -850,25 +873,16 @@ sc_cmd_session() {
 
   if [ "$want_note" -eq 1 ]; then
     sc_need curl
-    # Asked once, before the regenerate loop, not per-attempt -- the
-    # transcript is what changed hands (via note-drafting), the note is
-    # local output, and re-asking on every "regenerate" would just be
-    # noise for a choice that isn't expected to change mid-loop.
-    local deidentify_note=0
-    if [ -t 0 ] && [ -x "$SOAPCAP_DEIDENTIFY_BIN" ]; then
-      sc_info ""
-      sc_confirm "Run the drafted note through the local de-identifier before showing it?" && deidentify_note=1
-    fi
     local keep_note=0 note_choice
     while [ "$keep_note" -eq 0 ]; do
       sc_info ""
       if sc_generate_note "$format" "$model" "$host" "$transcript"; then
-        if [ "$deidentify_note" -eq 1 ]; then
+        if [ "$deidentify" -eq 1 ]; then
           if sc_deidentify_transcript "$SC_NOTE"; then
             SC_NOTE="$SC_DEIDENTIFY_TRANSCRIPT"
-            sc_info "$SC_DEIDENTIFY_SUMMARY"
+            sc_info "note: $SC_DEIDENTIFY_SUMMARY"
           else
-            sc_err "de-identify failed — showing the note as drafted instead (see above)"
+            sc_err "note de-identify failed — showing the note as drafted instead (see above)"
           fi
         fi
         sc_info ""

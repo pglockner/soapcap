@@ -199,14 +199,10 @@ Formats: `soap` (default), `dap`, `birp`.
 concentrate in the Objective section, the one part that requires telling an
 actual in-the-room observation apart from a client's own description of how
 they've been feeling — a smaller model can either invent detail that isn't
-there or miss detail that is. As a backstop, `sc_generate_note` also strips
-an occasional unprompted "Note: ..." aside some models append despite being
-told not to. Both are help, not a guarantee.
+there or miss detail that is.
 
-`note` sizes Ollama's context window (`num_ctx`) to the actual prompt length
-instead of trusting Ollama's small default — a long transcript that
-exceeded the default silently produced malformed notes (invented section
-headers, repeated paragraphs, PII echoed verbatim) with no error at all.
+`note` sizes Ollama's context window (`num_ctx`) to the transcript's length,
+so long sessions aren't silently truncated.
 
 **Models:**
 
@@ -218,16 +214,13 @@ headers, repeated paragraphs, PII echoed verbatim) with no error at all.
 | `qwen3:30b` | ~19GB (32GB+ systems) | **Untested.** Mixture-of-experts (3B active params), so faster than its size suggests. |
 | `gemma3:27b` | ~17GB (32GB+ systems) | **Untested.** Dense 27B; different failure modes than the Qwen models, worth comparing. |
 
-`qwen3:30b`/`gemma3:27b` are untested here by necessity — this project's
-development machine only has 16GB. See [`sc_model_catalog`](lib/commands.sh)
-for the authoritative, current list (this table mirrors it).
+The authoritative list is [`sc_model_catalog`](lib/commands.sh).
 
 **`soapcap model`** shows this table live (with which models are actually
 pulled) and, interactively, lets you pick one — pulling it via `ollama pull`
 if needed, with an extra confirmation for anything untested — and saves
 the pick as the new default for `session`/`note` (`--model` still overrides
-per-run). `session` itself no longer asks; it just uses whatever's
-configured.
+per-run). `session` uses whatever is configured and doesn't ask.
 
 Other flags: `--host URL`, `--clipboard`.
 
@@ -262,15 +255,9 @@ cd tools/deidentify-helper && swift build -c release
 First real run also downloads the Privacy Filter model's weights
 (one-time, no transcript data involved).
 
-**This one feature does need git and network access to GitHub**, unlike
-the rest of soapcap — building it resolves a Swift package dependency
-([OpenMedKit](https://github.com/maziyarpanahi/openmed)) via `git clone`
-under the hood. Nothing else in soapcap needs git (see [Install](#install)
-— the ZIP-download path works fine for everything else); git comes
-bundled with the full Xcode install this feature already needs, so it
-isn't a separate install — just worth knowing this specific feature
-reaches out to GitHub (and, on first real use, Hugging Face for the
-model weights) during setup.
+Unlike the rest of soapcap, building this helper needs `git` (bundled with
+Xcode) and network access to GitHub, to fetch OpenMedKit; the first real
+run also fetches model weights from Hugging Face.
 
 **This is a best-effort pass, not a certified de-identification.** It
 redacts what OpenMedKit's model tags and nothing more — a missed mention
@@ -286,45 +273,39 @@ Other flags: `--out FILE`, `--clipboard`.
 soapcap session
 ```
 
-The scriptable path above assumes you remember the pipe syntax. `session`
-runs its whole guided flow on the terminal's alternate screen buffer (see
-[Retention](#retention)) — expect the screen to look like a full-screen app
-and to clear when you're done, pressing Enter at the final prompt to
-return to your normal terminal. It captures live, reports the transcript's
-line count and asks **"Show
-the transcript?"**, then asks **"Draft a note from this?"**, **"Format?"**,
-and — if the [de-identify](#de-identify) helper is built — **"Run the
-drafted note through the local de-identifier before showing it?"** (asked
-once, applied to every regenerate attempt below, not re-asked each time).
-This checks the *note*, not the transcript — an independent, best-effort
-second pass, since the note-drafting model can occasionally restate or
-infer identifying details even from a clean transcript; it's not a
-substitute for de-identifying the transcript first if that matters for
-your use case. After drafting, it asks **"This draft: keep / regenerate /
-discard"** — LLM output is stochastic, so a weak draft is often just an
-unlucky roll. `regenerate` drafts again with the same model and
-transcript, looping for as many attempts as you want; `discard` ends the
-session with no note at all rather than forcing another attempt. Choosing
-`keep` copies the note to the clipboard right away — no separate confirm,
-since `keep` is already the answer to "do you want this." Enter takes the
-sensible default every time (yes, yes, soap, [yes,] keep) — the bracketed
-de-identify default only applies when that prompt appears; without [gum](#nicer-prompts-and-file-picking),
-every prompt also takes a bare first letter when it's unambiguous (`r` for
-regenerate, `b` for birp). `--format`, `--no-note`, `--model` skip the
-corresponding prompt for scripted use; `--clipboard` forces the copy on a
-non-interactive run (where there's no `keep` choice to trigger it
-automatically). Every `live`/`note` flag still applies. `session` always uses the model configured via
-[`soapcap model`](#draft-a-note) (or `--model`) — it doesn't ask. This is
-exactly what double-clicking `soapcap.command` runs — see
-[Clickable shortcut](#clickable-shortcut).
+`session` captures live, then walks through the rest with prompts. It runs
+on the terminal's alternate screen buffer (see [Retention](#retention)), so
+it looks like a full-screen app and clears when you press Enter at the end.
+
+1. **De-identify?** Only asked if the [de-identify](#de-identify) helper is
+   built. One yes/no: yes redacts the transcript (the redacted text is what
+   is displayed, drafted from, and copied), and redacts the drafted note
+   again before it's shown.
+2. **Show the transcript?**
+3. **Draft a note from this?** (worded "Draft a de-identified note…" if you
+   said yes to step 1), then **Format?** (soap, dap, birp).
+4. **This draft: keep / regenerate / discard.** `regenerate` drafts again
+   with the same model and transcript; `discard` ends with no note. `keep`
+   copies the note to the clipboard.
+
+Enter takes the default at every prompt; without
+[gum](#nicer-prompts-and-file-picking), a bare first letter works too (`r`
+for regenerate, `b` for birp). `--format`, `--no-note`, and `--model` skip
+the matching prompt; `--clipboard` forces the copy on non-interactive runs.
+Every `live`/`note` flag still applies. The model is whatever
+[`soapcap model`](#draft-a-note) configured. This is what double-clicking
+`soapcap.command` runs — see [Clickable shortcut](#clickable-shortcut).
+
+**Multiple clients in one session (couples, families):** redaction replaces
+each name with a numbered token, and the drafting model tends to write "the
+client" or "the couple" rather than track who is who, so the note may lose
+who said or did what. Decline de-identification if that attribution matters.
 
 ### Pause/resume
 
-Press **p** (or space) while recording; **p** again to resume. This is a
-real pause, not cosmetic — it stops `yap` the same clean way Ctrl-C does,
-so nothing is captured while paused, then starts a fresh capture on
-resume. Multiple pause/resume cycles are stitched into one transcript
-afterward, in order.
+Press **p** (or space) while recording; **p** again to resume. Pausing stops
+`yap`, so nothing is captured while paused; a fresh capture starts on
+resume. Multiple cycles are stitched into one transcript, in order.
 
 Keypresses need a real terminal (`soapcap.command` and a normal interactive
 run both qualify). Backgrounded/piped invocations fall back to signal-only
@@ -373,14 +354,9 @@ and click **Open Anyway** next to the `soapcap.command` notice (confirm
 with your password/Touch ID, then **Open** once more in the follow-up
 dialog). After that it opens normally, no repeat needed.
 
-This stays a plain tracked shell script rather than a compiled `.app` on
-purpose — a `.app` would need Xcode/Automator and a committed binary,
-rebuilt after every change; the symlinked script always runs current code.
-
 **Icon**: `install.sh` gives the Desktop shortcut a custom icon
-(`assets/soapcap.icns`) via [fileicon](https://github.com/mklement0/fileicon)
-if it's installed, or offers to install it — purely cosmetic, skip it and
-the shortcut just shows the generic script icon. By hand:
+(`assets/soapcap.icns`) via [fileicon](https://github.com/mklement0/fileicon),
+offering to install it if missing. Cosmetic only. By hand:
 
 ```sh
 brew install fileicon
@@ -388,23 +364,17 @@ fileicon set ~/Desktop/soapcap.command /path/to/soapcap/assets/soapcap.icns
 ```
 
 **Updating**: `update.command` is a second double-clickable shortcut that
-runs `git pull` in the repo — handy for sharing soapcap with someone
-non-technical (a collaborator giving feedback, say) who just needs to grab
-the latest changes without touching the terminal directly. `install.sh`
-only adds this one to the Desktop when the install is an actual git clone
-— a ZIP download has no `.git` to pull from, and the script says so
-plainly rather than erroring if run anyway. By hand:
+runs `git pull` in the repo. `install.sh` only adds it for a git clone (a
+ZIP download has no `.git` to pull from). By hand:
 
 ```sh
 ln -sf /path/to/soapcap/update.command ~/Desktop/update.command
 fileicon set ~/Desktop/update.command /path/to/soapcap/assets/soapcap-update.icns
 ```
 
-**Want a real keyboard shortcut?** Not shipped (a `.shortcut` file is a
-binary asset with the same staleness problem), but easy by hand: in
-Shortcuts.app, add a "Run Shell Script" action running
-`/path/to/soapcap/bin/soapcap session`, then assign it a shortcut from the
-saved shortcut's own settings.
+**Keyboard shortcut:** in Shortcuts.app, add a "Run Shell Script" action
+running `/path/to/soapcap/bin/soapcap session`, then assign it a shortcut
+in that shortcut's settings.
 
 ---
 
@@ -420,9 +390,9 @@ voice never loops back into system audio.
 
 `soapcap live` runs a **dedupe pass** by default: a mic-side segment whose
 wording is largely *contained in* a system-side segment nearby in time is
-dropped as an echo. Deliberately conservative — a missed echo is a harmless
-duplicate line, a wrongly dropped real segment is data loss. Tunable via env
-/ `~/.config/soapcap/config.sh`:
+dropped as an echo. It errs toward keeping lines: a missed echo is a
+duplicate, a wrongly dropped segment is lost. Tunable via env or
+`~/.config/soapcap/config.sh`:
 
 ```sh
 SOAPCAP_DEDUPE_WINDOW=3.5      # seconds of timing slack
@@ -430,25 +400,15 @@ SOAPCAP_DEDUPE_THRESHOLD=0.7   # word-containment ratio (0–1) to call it an ec
 SOAPCAP_DEDUPE_MINWORDS=2      # segments shorter than this are never dropped
 ```
 
-`--no-dedupe` shows the raw, undeduplicated output. `SOAPCAP_DEDUPE_MINWORDS`
-deliberately lets a single leftover word through unfiltered rather than risk
-dropping a real short line — expect the occasional one-word duplicate as a
-result.
+`--no-dedupe` shows the raw output. Expect an occasional one-word duplicate,
+since segments under `SOAPCAP_DEDUPE_MINWORDS` are never dropped.
+Headphones (even one earbud) remain the more reliable fix.
 
-Headphones remain the more reliable fix regardless — a single earbud is
-enough, and you're not straining to hear the session through a laptop
-speaker either.
+### Real diarization
 
-### Real diarization (FluidAudio)
-
-Actual voice-based diarization exists on-device via
-[FluidAudio](https://github.com/FluidInference/FluidAudio) (Swift/CoreML,
-Neural Engine, no cloud call) but isn't wired in — it diarizes **recorded
-audio**, which `yap` never produces on the `live` path (a real change to
-[Retention](#retention)), needs a Swift build and Hugging Face model
-download, and would mean a custom capture helper instead of gluing existing
-CLIs. Worth it if the dedupe pass proves insufficient in practice; not
-attempted.
+Voice-based diarization (e.g. [FluidAudio](https://github.com/FluidInference/FluidAudio),
+on-device) isn't wired in: it needs recorded audio, which the `live` path
+never produces (see [Retention](#retention)).
 
 ---
 
@@ -467,16 +427,10 @@ attempted.
   keeping it on an encrypted volume, is the safe path.
 - Your **terminal scrollback** holds whatever printed to stdout. Clear it
   (`Cmd-K`) after copying a transcript or note if you didn't use `--out`.
-  This applies to `live`/`note`/`transcribe`/`deidentify` run directly at a
-  terminal — `session` is the exception: it draws its guided flow (including
-  the transcript and drafted note) to the terminal's **alternate screen
-  buffer**, the same mechanism `vim`/`less`/`htop` use, specifically so it
-  never lands in normal scrollback in the first place. That matters because
-  scrollback isn't just "things you can scroll back to" — some terminal
-  apps periodically snapshot window/session state to disk for their own
-  restore-on-relaunch feature, independent of anything soapcap writes; the
-  alternate screen buffer is excluded from that too. The screen clears when
-  `session` ends (press Enter when prompted) — that's expected, not a bug.
+  `session` is the exception: it draws to the terminal's **alternate screen
+  buffer** (as `vim`/`less` do), which stays out of scrollback and out of
+  the window-restore snapshots some terminal apps write to disk. The
+  screen clears when `session` ends.
 - **`soapcap note` stays local** — the transcript goes to Ollama over
   `localhost` only. The note is PHI exactly like the transcript: stdout by
   default, disk only with `--out`.
@@ -519,20 +473,13 @@ attempted.
 - [x] `doctor` checks chip/memory/disk and sizes model advice to them
 - [x] Single-key stop (q/x) and real pause/resume (p) while recording
 - [x] Optional gum/fzf: nicer `session` prompts, `note` file picker
-- [x] Interactive model selection/download — `soapcap model` shows the
-      catalog as a table, offers to `ollama pull` a pick that isn't local
-      yet, and saves it as the new `session`/`note` default
+- [x] Interactive model selection/download (`soapcap model`)
 - [x] `soapcap deidentify` — best-effort local PII redaction before any hand-off
 - [ ] `--backend cloud` — POST the de-identified transcript to a
       BAA-covered SOAP API
 - [ ] `soapcap record` — the one path that *must* keep audio briefly, for
       Upheal (audio-only intake); capture to a temp `.m4a`, upload, delete
-- [ ] Richer `session` UI via a real TUI ([bubbletea](https://github.com/charmbracelet/bubbletea),
-      the library `gum` itself is built on), opt-in — today's alternate-screen
-      fix (see [Retention](#retention)) is the safety-critical baseline and
-      stays either way; a full TUI would be a nicer layer on top of it,
-      matching how gum/fzf are already optional today rather than a hard
-      requirement
+- [ ] Optional richer `session` UI via [bubbletea](https://github.com/charmbracelet/bubbletea)
 
 ---
 
