@@ -301,6 +301,21 @@ each name with a numbered token, and the drafting model tends to write "the
 client" or "the couple" rather than track who is who, so the note may lose
 who said or did what. Decline de-identification if that attribution matters.
 
+### Window app (experimental)
+
+```sh
+SOAPCAP_SIGN_IDENTITY="Apple Development: you@example.com (TEAMID)" tools/session-app/build.sh
+open tools/session-app/build/Soapcap.app
+```
+
+A SwiftUI window with the same flow as `session` (record, optional
+de-identify, draft, keep-and-copy) and scrollable, selectable transcript and
+note text. Because it isn't a terminal program, nothing it shows can land in
+terminal scrollback. It needs full Xcode and a code-signing identity so macOS
+keeps its Microphone and Screen Recording grants across rebuilds; see
+[tools/session-app/README.md](tools/session-app/README.md). No pause while
+recording.
+
 ### Pause/resume
 
 Press **p** (or space) while recording; **p** again to resume. Pausing stops
@@ -479,7 +494,7 @@ never produces (see [Retention](#retention)).
       BAA-covered SOAP API
 - [ ] `soapcap record` — the one path that *must* keep audio briefly, for
       Upheal (audio-only intake); capture to a temp `.m4a`, upload, delete
-- [ ] Optional richer `session` UI via [bubbletea](https://github.com/charmbracelet/bubbletea)
+- [x] Experimental native window front end for `session` (`tools/session-app`)
 
 ---
 
