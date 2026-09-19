@@ -28,6 +28,8 @@ final class SessionModel: ObservableObject {
     private var lastErr = ""
     private var stopReason: StopReason?
     private var timer: Timer?
+    /// Bumped by newSession() so a leg that finishes afterwards is ignored.
+    private var generation = 0
 
     /// yap needs about 3s to start; stopping or pausing earlier loses the
     /// leg (soapcap doctor's own probe runs for 3s too).
@@ -56,7 +58,8 @@ final class SessionModel: ObservableObject {
                 self.elapsed = self.priorElapsed + self.legElapsed
             }
         }
-        Task { let r = await leg.finish(); await self.legFinished(r) }
+        let gen = generation
+        Task { let r = await leg.finish(); await self.legFinished(r, generation: gen) }
     }
 
     func pause() { requestStop(.pause) }
@@ -74,7 +77,8 @@ final class SessionModel: ObservableObject {
         phase = .working(reason == .pause ? "Pausing…" : "Finishing transcription…")
     }
 
-    private func legFinished(_ r: (transcript: String, err: String, status: Int32)) async {
+    private func legFinished(_ r: (transcript: String, err: String, status: Int32), generation gen: Int) async {
+        guard gen == generation else { return }
         timer?.invalidate(); timer = nil
         live = nil
         priorElapsed = elapsed
@@ -145,6 +149,7 @@ final class SessionModel: ObservableObject {
     }
 
     func newSession() {
+        generation += 1
         stopReason = .finish
         live?.stop()
         timer?.invalidate(); timer = nil

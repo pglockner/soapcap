@@ -5,6 +5,7 @@ let package = Package(
     name: "soapcap-session-app",
     platforms: [.macOS(.v14)],
     targets: [
-        .executableTarget(name: "Soapcap", path: "Sources/Soapcap")
+        .executableTarget(name: "Soapcap", path: "Sources/Soapcap"),
+        .testTarget(name: "SoapcapTests", dependencies: ["Soapcap"], path: "Tests/SoapcapTests"),
     ]
 )

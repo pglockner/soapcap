@@ -42,6 +42,19 @@ Grant Microphone and Screen Recording to "Soapcap" the first time (quit and
 reopen the app after granting). The **Check permissions** button runs
 `soapcap doctor` as the app, so it reports what macOS lets the app do.
 
+## Tests
+
+```sh
+cd tools/session-app && swift test
+```
+
+15 XCTest cases (about 25 seconds) cover the session logic against a stub
+`soapcap`: pause/resume joining, de-identify order, failure screens, the
+3-second stop guard, and the stop-signal regression (signalling only the
+script, so `yap` gets SIGINT and not SIGTERM). Microphone/Screen Recording
+permissions, signing, and the window itself are not covered; they need a
+person.
+
 ## Limitations
 
 - Pause ends the current `soapcap live` and Resume starts a new one, so each
