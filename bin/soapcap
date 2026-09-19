@@ -4,7 +4,7 @@
 # then draft a SOAP/DAP/BIRP note from it with a local Ollama model.
 set -u
 
-SC_VERSION="0.4.0"
+SC_VERSION="0.4.1"
 
 # Resolve through symlinks so a PATH symlink still finds lib/.
 _sc_src="${BASH_SOURCE[0]}"

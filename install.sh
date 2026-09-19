@@ -220,4 +220,9 @@ if [ "$deidentify_ready" -ne 1 ]; then
 To build the (optional) local de-identification helper later:
   cd tools/deidentify-helper && swift build -c release"
 fi
+next_msg="$next_msg
+
+Optional extras (each README lists requirements and steps):
+  tools/deidentify-helper/   local PII redaction (needs full Xcode)
+  tools/session-app/         experimental window app (needs Xcode + a signing identity)"
 printf '%s\n' "$next_msg"
