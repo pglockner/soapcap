@@ -3,8 +3,8 @@ name: Shell lint
 # soapcap only runs on macOS 26 (Apple silicon) and depends on yap, Ollama,
 # and real audio hardware — none of which this runner has, so the actual
 # CLI is never invoked here. This workflow is syntax/lint plus fixture
-# tests of the pure text-transformation logic (dedupe, run merging,
-# sc_generate_note's safety nets) that don't need any of that.
+# tests of the pure text-transformation logic plus stub-based flow tests
+# (fake yap and curl, test/stubs/) that don't need any of that.
 on:
   push:
   pull_request:
@@ -17,7 +17,7 @@ jobs:
 
       - name: bash -n syntax check
         run: |
-          for f in bin/soapcap install.sh soapcap.command update.command test/run.sh lib/*.sh; do
+          for f in bin/soapcap install.sh soapcap.command update.command test/run.sh test/flow.sh test/stubs/curl lib/*.sh; do
             bash -n "$f"
           done
 
@@ -29,7 +29,7 @@ jobs:
           SUDO=""
           command -v sudo >/dev/null 2>&1 && SUDO=sudo
           $SUDO apt-get update -qq && $SUDO apt-get install -y -qq shellcheck
-          shellcheck bin/soapcap install.sh soapcap.command update.command test/run.sh lib/*.sh config.example.sh
+          shellcheck bin/soapcap install.sh soapcap.command update.command test/run.sh test/flow.sh test/stubs/curl lib/*.sh config.example.sh
 
       - name: fixture tests
         run: |
