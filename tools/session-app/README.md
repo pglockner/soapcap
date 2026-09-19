@@ -44,4 +44,5 @@ reopen the app after granting). The **Check permissions** button runs
 
 ## Limitations
 
-- No pause while recording (same as the TUI).
+- Pause ends the current `soapcap live` and Resume starts a new one, so each
+  leg needs about 3 seconds to start before it can be paused or stopped.

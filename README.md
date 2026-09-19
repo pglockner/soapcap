@@ -313,8 +313,8 @@ de-identify, draft, keep-and-copy) and scrollable, selectable transcript and
 note text. Because it isn't a terminal program, nothing it shows can land in
 terminal scrollback. It needs full Xcode and a code-signing identity so macOS
 keeps its Microphone and Screen Recording grants across rebuilds; see
-[tools/session-app/README.md](tools/session-app/README.md). No pause while
-recording.
+[tools/session-app/README.md](tools/session-app/README.md). Pause and resume
+are supported.
 
 ### Pause/resume
 

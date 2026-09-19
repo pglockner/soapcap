@@ -20,6 +20,7 @@ struct ContentView: View {
             switch m.phase {
             case .idle: idle
             case .recording: recording
+            case .paused: paused
             case .working(let msg): ProgressView(msg).frame(maxWidth: .infinity, maxHeight: .infinity)
             case .transcript: transcript
             case .note: note
@@ -50,7 +51,25 @@ struct ContentView: View {
             HStack { Circle().fill(.red).frame(width: 12, height: 12)
                 Text(String(format: "recording  %02d:%02d", m.elapsed / 60, m.elapsed % 60))
                     .font(.system(.title2, design: .monospaced)) }
-            Button("Stop") { m.stop() }.disabled(!m.canStop).keyboardShortcut(.defaultAction)
+            HStack {
+                Button("Pause") { m.pause() }.disabled(!m.canStop)
+                Button("Stop") { m.stop() }.disabled(!m.canStop).keyboardShortcut(.defaultAction)
+            }
+            Spacer()
+        }.frame(maxWidth: .infinity)
+    }
+
+    private var paused: some View {
+        VStack(spacing: 16) {
+            Spacer()
+            HStack { Image(systemName: "pause.circle.fill").foregroundStyle(.orange)
+                Text(String(format: "paused  %02d:%02d recorded", m.elapsed / 60, m.elapsed % 60))
+                    .font(.system(.title2, design: .monospaced)) }
+            Text("Nothing is being captured.").foregroundStyle(.secondary)
+            HStack {
+                Button("Resume") { m.resume() }.keyboardShortcut(.defaultAction)
+                Button("Stop") { m.stop() }
+            }
             Spacer()
         }.frame(maxWidth: .infinity)
     }
