@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# Fake `curl` standing in for Ollama in soapcap's flow tests (test/flow.sh).
+# STUB_OLLAMA_MODE: up (default) | down (connection refused, exit 7) |
+# error (generate returns an Ollama-style error) | empty (generate returns
+# an empty response). STUB_OLLAMA_MODEL: the one model "pulled".
+# STUB_CURL_LOG receives each URL; STUB_CURL_PAYLOAD the last -d payload.
+url=""; payload=""; out=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -d) payload="$2"; shift 2 ;;
+    -o) out="$2"; shift 2 ;;
+    http*) url="$1"; shift ;;
+    *) shift ;;
+  esac
+done
+[ -n "${STUB_CURL_LOG:-}" ] && echo "$url" >> "$STUB_CURL_LOG"
+[ -n "$payload" ] && [ -n "${STUB_CURL_PAYLOAD:-}" ] && printf '%s' "$payload" > "$STUB_CURL_PAYLOAD"
+
+mode="${STUB_OLLAMA_MODE:-up}"
+emit() { if [ -n "$out" ]; then printf '%s' "$1" > "$out"; else printf '%s' "$1"; fi; }
+
+case "$url" in
+  */api/tags)
+    [ "$mode" = down ] && exit 7
+    printf '{"models":[{"name":"%s"}]}' "${STUB_OLLAMA_MODEL:-llama3.1:8b}" ;;
+  */api/generate)
+    [ "$mode" = down ] && exit 7
+    case "$mode" in
+      error) emit '{"error":"boom"}' ;;
+      empty) emit '{"response":""}' ;;
+      *) emit '{"response":"SUBJECTIVE:\nStub note\n\nOBJECTIVE:\nNo observable presentation details available from a text-only transcript.\n\nASSESSMENT:\nStub assessment.\n\nPLAN:\nStub plan."}' ;;
+    esac ;;
+esac

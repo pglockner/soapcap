@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Fixture tests for soapcap's pure text-transformation logic -- the parts
-# that don't need real audio, hardware, or a live Ollama call: the dedupe
-# algorithm, pause/resume run merging, and sc_generate_note's safety nets.
-# This is a seed, not full coverage -- everything else (capture, doctor,
-# real note generation) has only ever been verified by hand.
+# Fixture tests for soapcap: pure text-transformation logic (dedupe, run
+# merging, note safety nets, de-identify plumbing), then flow tests
+# (test/flow.sh) that run the real bin/soapcap against fake yap and curl
+# (test/stubs/). Not covered: real audio, macOS permissions, the Ollama models
+# themselves, doctor, and the window app.
 #
 # Run with: test/run.sh
 # Exits non-zero if anything fails, so it's usable from CI.
@@ -196,6 +196,9 @@ assert_eq "deidentify: speaker label never sent to the helper, multi-line reasse
   "Sarah: HI THERE, WITH CAMILA.
 Client: SECOND LINE HERE." "$SC_DEIDENTIFY_TRANSCRIPT"
 rm -f "$stub"
+
+# shellcheck source=test/flow.sh
+. "$here/test/flow.sh"
 
 echo
 echo "$pass passed, $fail failed"

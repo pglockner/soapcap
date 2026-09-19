@@ -1,0 +1,57 @@
+#!/usr/bin/env perl
+# Fake `yap` for soapcap's flow tests (test/flow.sh). Perl, not bash: bash
+# refuses to trap signals that were ignored at startup, and a background job
+# in a non-interactive bash starts with SIGINT ignored -- like real yap, this
+# has to install its own handler regardless.
+#
+# Models the real thing: streams the start of a JSON document, finalizes it on
+# SIGINT, and dies with no output on SIGTERM (the failure mode that lost
+# recordings when a stop signal reached yap directly).
+#
+# STUB_YAP_MODE: normal (default) | empty (no segments) | nodata (no output
+# at all) | permission (Screen Recording error, exit 1).
+# STUB_YAP_LOG: file that receives the args, "started", and signals received.
+use strict;
+use warnings;
+$| = 1;
+
+my ($mic, $sys) = ('Mic', 'System');
+for my $i (0 .. $#ARGV) {
+    $mic = $ARGV[$i + 1] if $ARGV[$i] eq '--mic-label';
+    $sys = $ARGV[$i + 1] if $ARGV[$i] eq '--system-label';
+}
+my $mode = $ENV{STUB_YAP_MODE} // 'normal';
+my $log  = $ENV{STUB_YAP_LOG};
+
+sub note_log {
+    return unless $log;
+    open(my $fh, '>>', $log) or return;
+    print $fh "@_\n";
+    close $fh;
+}
+
+sub segments {
+    return (
+        qq({"end":2.0,"id":1,"speaker":"$mic","start":0.5,"text":"How have you been sleeping"}),
+        qq({"end":5.0,"id":2,"speaker":"$sys","start":3.0,"text":"Not great this week"}),
+    );
+}
+
+note_log("args: @ARGV");
+
+if ($mode eq 'permission') {
+    print STDERR "Error: Screen Recording permission is required. Grant it to your terminal app in System Settings.\n";
+    exit 1;
+}
+
+$SIG{INT} = sub {
+    note_log('signal INT');
+    if    ($mode eq 'normal') { print join(',', segments()), "]}\n" }
+    elsif ($mode eq 'empty')  { print "]}\n" }
+    exit 0;
+};
+$SIG{TERM} = sub { note_log('signal TERM'); exit 143 };
+
+print '{"segments":[' unless $mode eq 'nodata';
+note_log('started');
+select(undef, undef, undef, 0.05) while 1;
