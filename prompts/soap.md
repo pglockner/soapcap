@@ -55,6 +55,10 @@ Rules:
   Assessment and Plan, regardless of how brief or indirect.
 - Write in clear, professional clinical documentation language, third
   person, past tense.
+- Write each section as continuous prose, in full sentences — never a
+  numbered list, a bulleted list, or bolded sub-labels acting as mini-
+  headers within a section, even when Plan has several distinct
+  interventions or next steps to cover.
 - Do not add any client-identifying information beyond what already
   appears in the transcript. Do not assume or invent anyone's gender —
   use "the client"/"the therapist" (or singular they) unless the
