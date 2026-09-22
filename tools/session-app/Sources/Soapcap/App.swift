@@ -120,3 +120,8 @@ struct ContentView: View {
         }
     }
 }
+
+#Preview {
+    ContentView().environmentObject(SessionModel())
+        .frame(width: 560, height: 420)
+}

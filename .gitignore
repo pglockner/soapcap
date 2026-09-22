@@ -34,3 +34,4 @@ tools/deidentify-helper/.build/
 tools/deidentify-helper/.swiftpm/
 tools/session-app/.build/
 tools/session-app/build/
+tools/session-app/.swiftpm/
