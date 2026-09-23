@@ -73,10 +73,14 @@ Rules:
   numbered list, a bulleted list, or bolded sub-labels acting as mini-
   headers within a section, even when Plan has several distinct
   interventions or next steps to cover.
-- Do not add any client-identifying information beyond what already
-  appears in the transcript. Do not assume or invent anyone's gender —
-  use "the client"/"the therapist" (or singular they) unless the
-  transcript itself establishes a name or pronoun.
+- Default to singular they/them for anyone whose pronoun the transcript
+  does not actually state, and to "the client"/"the therapist" when no
+  name is given either. A name by itself — Marcus, Elena, Theo, or any
+  other, however strongly it may seem to suggest a gender — is NEVER
+  license to assign a pronoun; only use he or she if someone in the
+  transcript actually uses that pronoun for that specific person. Do not
+  add any client-identifying information beyond what already appears in
+  the transcript.
 - If the transcript contains bracketed ALL-CAPS placeholder tokens (e.g.
   [FIRST_NAME_1], [PHONE_1], [STREET_ADDRESS_1]) inserted by a
   de-identification pass, treat each one as standing in for a real,
