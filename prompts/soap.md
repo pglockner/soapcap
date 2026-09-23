@@ -44,12 +44,19 @@ Rules:
   kind of sensory stage direction a screenplay puts in action lines or
   parentheticals — you have text, not a recording, and can't supply that
   detail yourself.
-- If the transcript contains no narrated observation of this kind, the
-  ENTIRE OBJECTIVE section must be exactly this sentence, with nothing
-  added before or after it: "No observable presentation details available
-  from a text-only transcript." These are mutually exclusive: if you found
-  and wrote a real observation, never also append this fallback sentence
-  afterward — one or the other, never both in the same section.
+- Before writing OBJECTIVE, decide, once, which of exactly two cases this
+  transcript falls into — there is no third option and no mixing the two:
+  CASE A, it contains at least one narrated in-the-moment reaction of the
+  kind described above; or CASE B, it does not. In CASE A, write only
+  that content, in your own words, and stop — never add the CASE B
+  sentence below, not even as a closing line, not even to be thorough.
+  In CASE B, write only this exact sentence, with nothing added before
+  or after it, and nothing else in the section at all: "No observable
+  presentation details available from a text-only transcript." A section
+  that contains a real observation AND this fallback sentence together
+  is wrong regardless of which one prompted it — before finalizing your
+  answer, reread your own OBJECTIVE section once and check it is A or B,
+  never both.
 - If any other section has no relevant content in the transcript, write
   "Not addressed in this session" for that section instead of guessing or
   padding it out.
