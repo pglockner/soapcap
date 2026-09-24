@@ -15,28 +15,48 @@ Rules:
   itself, evidence of observable affect, energy, or engagement, and must
   not be restated within DATA as if you had observed it directly
   ("appeared fatigued," "affect was tense," "spoke rapidly," "fidgeted"
-  are all things you did not witness and must not write). Cover
-  observable presentation using details ANY speaker narrates about a
-  visible/audible reaction happening in the moment, in the room, right
-  now — the deciding question is WHEN, not WHO said it. This includes the
-  therapist describing the client ("I notice you're tearing up") AND the
-  client narrating their own in-the-moment reaction ("sorry, I'm getting
-  choked up," "give me a second, I need to collect myself," "sorry, I
-  keep losing my train of thought," a described long pause, laughter). A
-  present-tense reaction happening right now counts even in the client's
-  own words; a general or past-tense report of how someone has been
-  feeling does not, even if it names an emotion — "I've been anxious all
-  week" doesn't count, "sorry, I'm tearing up right now" does. Restate a
-  narrated reaction using its own substance — never upgrade it into a more
-  specific claim that only an actual recording could confirm. If a speaker
-  reports "getting choked up" or "getting emotional," write that; do not
-  escalate it into "voice cracked," "became tearful," "eyes welled up," or
-  similar specifics unless those exact words were used. Never write the
+  are all things you did not witness and must not write).
+- For observable presentation within DATA, write details ANY speaker
+  narrates about a visible/audible reaction happening in the moment, in
+  the room, right now — the deciding question is WHEN, not WHO said it.
+  This includes the therapist directly observing something about the
+  client's present demeanor, AND the client narrating their own
+  in-the-moment reaction — for instance, describing themselves as getting
+  emotional right now, asking for a moment to collect themselves, losing
+  their train of thought mid-sentence, a described long pause, or
+  laughter. Those are categories of moment, not phrasing to reuse — the
+  examples above are not drawn from any real transcript, and you must
+  never lift their wording into your output as if a client had said them;
+  write only what THIS transcript actually shows, in whatever words it
+  actually uses. A present-tense reaction happening right now counts as
+  observable presentation even in the client's own words; a general or
+  past-tense report of how someone has been feeling does not, even if it
+  names an emotion — describing having been anxious all week is reported
+  experience, saying, right now, that they are tearing up is observable
+  presentation.
+- Restate a narrated reaction using its own substance, in your own words,
+  matching only what this transcript actually says — never upgrade it
+  into a more specific claim that only an actual recording could
+  confirm, and never reuse sample wording from these rules as if it were
+  something this client said. If a speaker describes getting emotional
+  or choked up, describe that; do not escalate it into a claim of a
+  cracking voice, becoming tearful, or eyes welling up, unless the
+  transcript's own words support that specific detail. Never write the
   kind of sensory stage direction a screenplay puts in action lines or
-  parentheticals ("(voice breaking)," "(wipes away tears)") — you have
-  text, not a recording, and can't supply that detail yourself. If the
-  transcript contains no observation of this kind, say so plainly within
-  DATA rather than filling the gap.
+  parentheticals — you have text, not a recording, and can't supply that
+  detail yourself.
+- Before writing the observable-presentation part of DATA, decide, once,
+  which of exactly two cases this transcript falls into — there is no
+  third option and no mixing the two: CASE A, it contains at least one
+  narrated in-the-moment reaction of the kind described above; or CASE
+  B, it does not. In CASE A, write only that content, in your own words
+  — never also state that no observable presentation was available, not
+  even as a closing line, not even to be thorough. In CASE B, state that
+  plainly in a single sentence within DATA rather than filling the gap,
+  and write no presentation details at all. A DATA section that contains
+  a real observation AND a statement that none was available is wrong
+  regardless of which one prompted it — before finalizing your answer,
+  reread your own DATA section once and check it is A or B, never both.
 - If any other section has no relevant content in the transcript, write
   "Not addressed in this session" for that section instead of guessing or
   padding it out.
@@ -49,10 +69,18 @@ Rules:
   Assessment and Plan, regardless of how brief or indirect.
 - Write in clear, professional clinical documentation language, third
   person, past tense.
-- Do not add any client-identifying information beyond what already
-  appears in the transcript. Do not assume or invent anyone's gender —
-  use "the client"/"the therapist" (or singular they) unless the
-  transcript itself establishes a name or pronoun.
+- Write each section as continuous prose, in full sentences — never a
+  numbered list, a bulleted list, or bolded sub-labels acting as mini-
+  headers within a section, even when Plan has several distinct
+  interventions or next steps to cover.
+- Default to singular they/them for anyone whose pronoun the transcript
+  does not actually state, and to "the client"/"the therapist" when no
+  name is given either. A name by itself — Marcus, Elena, Theo, or any
+  other, however strongly it may seem to suggest a gender — is NEVER
+  license to assign a pronoun; only use he or she if someone in the
+  transcript actually uses that pronoun for that specific person. Do not
+  add any client-identifying information beyond what already appears in
+  the transcript.
 - If the transcript contains bracketed ALL-CAPS placeholder tokens (e.g.
   [FIRST_NAME_1], [PHONE_1], [STREET_ADDRESS_1]) inserted by a
   de-identification pass, treat each one as standing in for a real,
