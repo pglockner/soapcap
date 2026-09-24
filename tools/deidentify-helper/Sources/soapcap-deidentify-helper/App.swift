@@ -3,7 +3,8 @@ import OpenMedKit
 
 // soapcap-deidentify-helper — reads a transcript body (labels already
 // stripped by the caller) on stdin, runs it through OpenMedKit's on-device
-// Privacy Filter model, and writes the same text back with detected PII
+// Privacy Filter model plus two regex rules (month names, 7+-digit numbers),
+// and writes the same text back with detected PII
 // spans replaced by consistent, category-numbered bracket tokens
 // ([FIRST_NAME_1], [PHONE_1], ...). A one-line human-readable summary
 // goes to stderr. See the repo README for the full stdin/stdout/exit-code
@@ -43,6 +44,44 @@ func removeOverlaps(_ entities: [EntityPrediction]) -> [EntityPrediction] {
         result.append(entity)
     }
     return result
+}
+
+// Two deterministic rules layered on top of the model, for categories the
+// model was confirmed to miss or partially redact on the sample-transcript
+// corpus (see README "Rule-based detections"). Case-sensitive on purpose:
+// lowercase "may"/"march" are ordinary words; a capitalized sentence-initial
+// "May" is the one known false positive. The long-number rule counts digits
+// (7+) rather than matching a phone layout because speech-to-text groups
+// digits inconsistently ("123-456789" for a spoken SSN); exactly 7 or 10
+// digits is labeled PHONE, anything else ID_NUM.
+let monthRule = try! NSRegularExpression(
+    pattern: #"\b(?:January|February|March|April|May|June|July|August|September|October|November|December)(?:\s+\d{1,2}(?:st|nd|rd|th)?)?\b"#
+)
+let longNumberRule = try! NSRegularExpression(
+    pattern: #"(?<![\w-])(?=(?:-?\d){7})\d+(?:-\d+)*(?![\w-])"#
+)
+
+// EntityPrediction offsets are Unicode scalar offsets, not UTF-16 or
+// Character offsets -- transcripts contain em-dashes, so the conversion
+// matters.
+func ruleEntities(in text: String) -> [EntityPrediction] {
+    let whole = NSRange(text.startIndex..., in: text)
+    let scalars = text.unicodeScalars
+    func entity(_ label: String, _ match: NSTextCheckingResult) -> EntityPrediction? {
+        guard let range = Range(match.range, in: text) else { return nil }
+        return EntityPrediction(
+            label: label, text: String(text[range]), confidence: 1.0,
+            start: scalars.distance(from: scalars.startIndex, to: range.lowerBound),
+            end: scalars.distance(from: scalars.startIndex, to: range.upperBound)
+        )
+    }
+    let months = monthRule.matches(in: text, range: whole).compactMap { entity("date", $0) }
+    let numbers = longNumberRule.matches(in: text, range: whole).compactMap { match -> EntityPrediction? in
+        guard let range = Range(match.range, in: text) else { return nil }
+        let digits = text[range].filter(\.isNumber).count
+        return entity(digits == 7 || digits == 10 ? "phone" : "id_num", match)
+    }
+    return months + numbers
 }
 
 // Builds the redacted text and its one-line summary. Public logic lives
@@ -101,7 +140,7 @@ func redact(text: String, rawEntities: [EntityPrediction]) -> (redacted: String,
 struct SoapcapDeidentifyHelper {
     static func main() async {
         if CommandLine.arguments.dropFirst().contains("--version") {
-            print("soapcap-deidentify-helper 0.1.0 (OpenMedKit Privacy Filter)")
+            print("soapcap-deidentify-helper 0.2.0 (OpenMedKit Privacy Filter + month/long-number rules)")
             exit(0)
         }
 
@@ -140,7 +179,13 @@ struct SoapcapDeidentifyHelper {
                 chunkTokenLimit: 480, tokenOverlap: 128
             )
 
-            let (redactedText, summary) = redact(text: text, rawEntities: defaultPass + widePass)
+            // Rule matches merge through the same removeOverlaps() as the
+            // model's spans. A full "555-0233" rule span starts earlier and is
+            // longer than a partial model span like "-0233", so it wins --
+            // which also closes the partial-boundary leak (README).
+            let (redactedText, summary) = redact(
+                text: text, rawEntities: defaultPass + widePass + ruleEntities(in: text)
+            )
             writeStdout(redactedText)
             writeStderr(summary)
             exit(0)

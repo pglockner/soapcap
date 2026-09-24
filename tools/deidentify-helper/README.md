@@ -37,7 +37,8 @@ exactly where `SOAPCAP_DEIDENTIFY_BIN` (in `lib/common.sh`) expects it.
 
 - **stdin**: UTF-8 text — a transcript's body only, no speaker labels
   (the caller strips those first and re-attaches them after).
-- **stdout on exit 0**: the same text with detected PII spans replaced by
+- **stdout on exit 0**: the same text with detected PII spans (model and
+  [rules](#rule-based-detections)) replaced by
   consistent bracketed tokens (`[FIRST_NAME_1]`, `[PHONE_1]`, …) — the
   same value always gets the same token, different values never collide.
   Line count is unchanged from the input.
@@ -62,6 +63,48 @@ and merging covers both, for roughly 2x inference time (still under a
 second for a typical transcript on this model's size). Full story in
 `DEV_NOTES.local.md` if you're touching this again.
 
+## Rule-based detections
+
+Two regex rules run alongside the model, and their matches merge through
+the same `removeOverlaps()` as the model's spans:
+
+| Rule | Pattern | Label |
+|---|---|---|
+| Month names, with optional day | `\b(?:January\|…\|December)(?:\s+\d{1,2}(?:st\|nd\|rd\|th)?)?\b` (case-sensitive) | `DATE` |
+| 7+ digits, optionally hyphen-grouped | `(?<![\w-])(?=(?:-?\d){7})\d+(?:-\d+)*(?![\w-])` | `PHONE` if exactly 7 or 10 digits, else `ID_NUM` |
+
+Why these two and not more:
+
+- **Months** cover the model's one confirmed category-level miss (see
+  below). Matching is case-sensitive, so lowercase "may" and "march" are
+  never touched. A capitalized, sentence-initial "May I…" *is*
+  redacted, a known false positive in the safe direction.
+- **Long numbers** count digits instead of matching a phone layout,
+  because speech-to-text groups digits inconsistently. In a test of
+  spoken numbers transcribed by `yap`, phone numbers came out
+  `555-0199` / `415-555-0148` (parentheses dropped), and a spoken SSN
+  came out `123-456789`. A number of seven or more digits in a
+  therapy transcript is almost always an identifier. Dollar amounts are
+  safe, because the transcriber inserts commas (`$1,500,000`), which break
+  the match. This rule also closes the partial-boundary leak described
+  below for hyphenated numbers: the full `555-0199` rule span starts
+  earlier and is longer than a partial model span such as `-0199`, so it
+  wins the overlap merge.
+
+Known gaps these rules deliberately don't cover:
+
+- A bare four-digit reference ("the number ending in 0199"). A rule
+  covering it would have to redact every four-digit number, which is
+  too broad.
+- A long number read as separate digits, which the transcriber may
+  write as `1, 2, 3, 4, 5, 6,789`.
+- Numbers separated by spaces or dots. None appeared in the
+  transcription test.
+
+On the sample-transcript corpus, adding the rules took must-redact
+identifiers from 36/40 to 38/40 fully removed, with no new false
+positives. The two remaining misses are the "ending in" references above.
+
 ## Known limitation, found during testing
 
 The model (OpenMed's ~33M-param Privacy Filter, via MLX) does not
@@ -73,7 +116,8 @@ project's sample-transcript corpus (`~/.config/soapcap/sample-transcripts/`):
 - A month-only date mention ("your anniversary is coming up in August")
   was never tagged at all, in either occurrence, under any window
   configuration or confidence threshold tested — a genuine miss, not a
-  chunking artifact.
+  chunking artifact. The month rule under
+  [Rule-based detections](#rule-based-detections) now covers it.
 - A hyphenated surname ("Okonkwo-Reyes") got labeled inconsistently
   across two separate mentions in the same transcript — `USERNAME` once,
   `LAST_NAME` once. Both instances still got redacted; this is a
@@ -91,15 +135,19 @@ project's sample-transcript corpus (`~/.config/soapcap/sample-transcripts/`):
   doesn't guarantee a clean run on another; there's no known way to
   detect this class of partial leak from the summary line alone (it
   still reports `PHONE x1` either way) — only a byte-level diff of the
-  actual output caught it here.
+  actual output caught it here. For numbers of 7+ digits, the
+  long-number rule now covers this (see
+  [Rule-based detections](#rule-based-detections)). It is still possible
+  for any other category.
 
 This is exactly why `soapcap deidentify` is documented as best-effort,
-not certified — see the main README's Legal section. Don't "fix" the
-date-miss above by bolting regex onto the Swift side for structured
-formats without discussing it first: it was a deliberate, considered
-choice earlier in this feature's design to prefer a real NER model over
-hand-rolled regex specifically because regex is weak on the *harder*
-category (names), and mixing the two approaches has real tradeoffs
-(regex false-positives, doubled maintenance surface, two different
-failure models to reason about) that deserve a real decision, not a
-quiet patch.
+not certified — see the main README's Legal section.
+
+The design deliberately prefers a real NER model over hand-rolled regex,
+because regex is weak on the *harder* category (names), and mixing the
+two approaches has real tradeoffs: regex false positives, a doubled
+maintenance surface, and two different failure models to reason about.
+The two rules above were added as a considered exception, limited to
+formats regex handles well (month names, long digit runs), each tied to
+a measured model miss. Keep further regex to that standard, not quiet
+patches.

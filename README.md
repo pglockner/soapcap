@@ -260,7 +260,10 @@ Xcode) and network access to GitHub, to fetch OpenMedKit; the first real
 run also fetches model weights from Hugging Face.
 
 **This is a best-effort pass, not a certified de-identification.** It
-redacts what OpenMedKit's model tags and nothing more — a missed mention
+redacts what OpenMedKit's model tags, plus two narrow pattern rules (month
+names and numbers of seven or more digits; see
+[the helper's README](tools/deidentify-helper/README.md#rule-based-detections)),
+and nothing more — a missed mention
 stays in the output verbatim, and the output is still confidential
 clinical material. Read it before sending it anywhere. See
 [Legal](#legal--read-before-first-use).
