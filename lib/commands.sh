@@ -611,7 +611,8 @@ sc_bonsai_start() {
       sc_bonsai_stop
       return 1
     fi
-    if curl -s --max-time 2 "$url/health" 2>/dev/null | jq -e '.status == "ok"' >/dev/null 2>&1; then
+    # Not `jq -e`: jq 1.6 exits 0 on empty input, i.e. when nothing answers.
+    if [ "$(curl -s --max-time 2 "$url/health" 2>/dev/null | jq -r '.status // empty' 2>/dev/null)" = ok ]; then
       return 0
     fi
     sleep 1
