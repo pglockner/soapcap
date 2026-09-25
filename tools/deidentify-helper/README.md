@@ -111,7 +111,7 @@ The model (OpenMed's ~33M-param Privacy Filter, via MLX) does not
 reliably catch every instance of every category, even after the
 two-pass merge above — this isn't a bug in the code here, it's the
 actual model's real-world recall. Confirmed directly against this
-project's sample-transcript corpus (`~/.config/soapcap/sample-transcripts/`):
+project's sample-transcript corpus ([`samples/transcripts/`](../../samples/transcripts/)):
 
 - A month-only date mention ("your anniversary is coming up in August")
   was never tagged at all, in either occurrence, under any window
