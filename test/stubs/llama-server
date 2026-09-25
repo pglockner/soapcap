@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Fake PrismML llama-server for soapcap's flow tests (test/flow.sh). Logs
+# "started ARGS" to STUB_LLAMA_LOG, then runs until signalled and logs
+# "stopped". STUB_LLAMA_MODE=crash exits at once, as a failed model load does.
+log="${STUB_LLAMA_LOG:-/dev/null}"
+if [ "${STUB_LLAMA_MODE:-}" = crash ]; then
+  echo "llama_model_load: error loading model" >&2
+  exit 1
+fi
+echo "started $*" >> "$log"
+trap 'echo stopped >> "$log"; exit 0' TERM INT
+while :; do sleep 0.1; done

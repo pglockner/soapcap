@@ -29,7 +29,7 @@ jobs:
           SUDO=""
           command -v sudo >/dev/null 2>&1 && SUDO=sudo
           $SUDO apt-get update -qq && $SUDO apt-get install -y -qq shellcheck
-          shellcheck bin/soapcap install.sh soapcap.command update.command test/run.sh test/flow.sh test/stubs/curl lib/*.sh config.example.sh
+          shellcheck bin/soapcap install.sh soapcap.command update.command test/run.sh test/flow.sh test/stubs/curl test/stubs/llama-server lib/*.sh config.example.sh tools/bonsai/install.sh
 
       - name: fixture tests
         run: |

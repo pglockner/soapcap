@@ -4,6 +4,21 @@ set -eu
 
 here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
+case "${1:-}" in
+  -h|--help)
+    cat <<'EOF'
+Usage: ./install.sh
+
+Installs yap and jq via Homebrew, puts soapcap on your PATH, runs
+`soapcap doctor`, then offers each optional piece in turn (Desktop
+shortcut, gum, fzf, note drafting via Ollama + llama3.1:8b, the Bonsai
+note model, the de-identify helper). Safe to re-run.
+EOF
+    exit 0 ;;
+  "") ;;
+  *) echo "install.sh takes no arguments (try --help)" >&2; exit 2 ;;
+esac
+
 maj=$(sw_vers -productVersion 2>/dev/null | cut -d. -f1)
 if [ "${maj:-0}" -lt 26 ] 2>/dev/null; then
   echo "soapcap needs macOS 26 (Tahoe) or newer — found $(sw_vers -productVersion)." >&2
@@ -115,31 +130,100 @@ if [ -t 0 ] && ! command -v fzf >/dev/null 2>&1; then
   esac
 fi
 
+# --- note models: one question, offering only what isn't set up yet --------
+# Re-running install.sh must never push a download someone has declined, so
+# an already-installed model is never offered again, and once any model is
+# set up the default answer is to add nothing.
+bonsai_dir="${SOAPCAP_BONSAI_DIR:-$HOME/.local/share/soapcap/bonsai}"
 ollama_ready=0
-if [ -t 0 ]; then
+[ -f "${OLLAMA_MODELS:-$HOME/.ollama/models}/manifests/registry.ollama.ai/library/llama3.1/8b" ] && ollama_ready=1
+bonsai_ready=0
+[ -x "$bonsai_dir/llama.cpp/build/bin/llama-server" ] \
+  && [ -f "$bonsai_dir/Ternary-Bonsai-2-27B-PTQ1_0.gguf" ] && bonsai_ready=1
+mem_gb=$(( $(/usr/sbin/sysctl -n hw.memsize 2>/dev/null || echo 0) / 1073741824 ))
+
+setup_llama() {
+  command -v ollama >/dev/null 2>&1 || brew install ollama
+  brew services start ollama >/dev/null 2>&1 || true
+  echo "==> Pulling llama3.1:8b (~5GB)"
+  if ollama pull llama3.1:8b; then
+    ollama_ready=1
+  else
+    echo "==> llama3.1:8b pull failed — retry any time: ollama pull llama3.1:8b"
+  fi
+}
+setup_bonsai() {
+  if "$here/tools/bonsai/install.sh"; then
+    bonsai_ready=1
+  else
+    echo "==> Bonsai setup didn't finish — re-run any time: tools/bonsai/install.sh"
+  fi
+}
+
+offer_bonsai=1
+[ "$mem_gb" -lt 16 ] && offer_bonsai=0
+choices=()
+[ "$ollama_ready" -eq 0 ] && choices+=("llama3.1:8b")
+[ "$bonsai_ready" -eq 0 ] && [ "$offer_bonsai" -eq 1 ] && choices+=("bonsai")
+[ "${#choices[@]}" -eq 2 ] && choices+=("both")
+
+if [ -t 0 ] && [ "${#choices[@]}" -gt 0 ]; then
+  default_choice="${choices[0]}"
+  [ "$ollama_ready" -eq 1 ] || [ "$bonsai_ready" -eq 1 ] && default_choice="skip"
+  choices+=("skip")
+
   echo
-  printf "Set up local note drafting now (installs Ollama, downloads llama3.1:8b, ~5GB)? [Y/n] "
+  echo "Local note drafting — which model(s)?"
+  [ "$ollama_ready" -eq 1 ] && echo "  (llama3.1:8b is already set up)"
+  [ "$bonsai_ready" -eq 1 ] && echo "  (bonsai is already set up)"
+  i=1
+  for c in "${choices[@]}"; do
+    case "$c" in
+      llama3.1:8b) desc="fast, usually under a minute a note — installs Ollama, ~5GB" ;;
+      bonsai)      desc="slower (a few minutes) but more careful — builds PrismML's llama.cpp fork, ~6GB" ;;
+      both)        desc="both of the above (~11GB)" ;;
+      skip)        desc="nothing now — capture and transcription work without a model" ;;
+    esac
+    printf '  %d) %-12s %s\n' "$i" "$c" "$desc"
+    i=$((i + 1))
+  done
+  printf "Choose [default: %s] " "$default_choice"
   ans=""
   read -r ans || true
-  case "$ans" in
-    n|N|no|No) : ;;
-    *)
-      command -v ollama >/dev/null 2>&1 || brew install ollama
-      brew services start ollama >/dev/null 2>&1 || true
-      echo "==> Pulling llama3.1:8b (default model, ~5GB)"
-      if ollama pull llama3.1:8b; then
-        ollama_ready=1
-        # llama3.1:8b is the safe, already-tested default; offer to also
-        # pick/pull one of the other tested models (or, with an extra
-        # warning, an untested larger one for 32GB+ systems) right away.
-        # SOAPCAP_NO_GUM keeps this plain-text even if gum was just
-        # installed a few prompts ago -- install.sh stays plain
-        # throughout rather than switching styles partway through.
-        echo
-        SOAPCAP_NO_GUM=1 "$here/bin/soapcap" model || true
-      fi
-      ;;
+  pick="$default_choice"
+  if [ -n "$ans" ]; then
+    pick=""
+    i=1
+    for c in "${choices[@]}"; do
+      [ "$ans" = "$i" ] || [ "$ans" = "$c" ] && pick="$c"
+      i=$((i + 1))
+    done
+    [ -n "$pick" ] || { echo "==> Not a choice — skipping note models for now"; pick="skip"; }
+  fi
+  case "$pick" in
+    llama3.1:8b) setup_llama ;;
+    bonsai)      setup_bonsai ;;
+    both)        setup_llama; setup_bonsai ;;
   esac
+fi
+
+# Point the default at an installed model when the current one isn't.
+cfg="${SOAPCAP_CONFIG:-$HOME/.config/soapcap/config.sh}"
+current=$(sed -n 's/^SOAPCAP_MODEL="\(.*\)"$/\1/p' "$cfg" 2>/dev/null | tail -n 1)
+current="${current:-llama3.1:8b}"
+new_default=""
+if [ "$current" = "llama3.1:8b" ] && [ "$ollama_ready" -eq 0 ] && [ "$bonsai_ready" -eq 1 ]; then
+  new_default="bonsai"
+elif [ "$current" = "bonsai" ] && [ "$bonsai_ready" -eq 0 ] && [ "$ollama_ready" -eq 1 ]; then
+  new_default="llama3.1:8b"
+fi
+if [ -n "$new_default" ]; then
+  if grep -q '^SOAPCAP_MODEL=' "$cfg" 2>/dev/null; then
+    sed -i '' "s|^SOAPCAP_MODEL=.*|SOAPCAP_MODEL=\"$new_default\"|" "$cfg"
+  else
+    printf 'SOAPCAP_MODEL="%s"\n' "$new_default" >> "$cfg"
+  fi
+  echo "==> Default note model set to $new_default (the one that's installed)"
 fi
 
 deidentify_ready=0
@@ -195,9 +279,9 @@ fi
 next_msg="
 Next:
   soapcap session                                     # guided: capture, then ask about a note"
-if [ "$ollama_ready" -eq 1 ]; then
+if [ "$ollama_ready" -eq 1 ] || [ "$bonsai_ready" -eq 1 ]; then
   next_msg="$next_msg
-  soapcap model                                       # pick/change the note-drafting model"
+  soapcap model                                       # pick the note model (llama3.1:8b or bonsai)"
 fi
 if [ "$deidentify_ready" -eq 1 ]; then
   next_msg="$next_msg
@@ -205,14 +289,12 @@ if [ "$deidentify_ready" -eq 1 ]; then
 fi
 next_msg="$next_msg
   cp config.example.sh ~/.config/soapcap/config.sh    # optional config"
-if [ "$ollama_ready" -ne 1 ]; then
+if [ "$ollama_ready" -ne 1 ] && [ "$bonsai_ready" -ne 1 ]; then
   next_msg="$next_msg
 
-To draft notes locally (optional — a ~5GB one-time download):
-  brew install ollama
-  brew services start ollama
-  ollama pull llama3.1:8b
-  soapcap session               # or: soapcap live | soapcap note"
+To draft notes locally later, re-run ./install.sh and pick a model, or:
+  brew install ollama && brew services start ollama && ollama pull llama3.1:8b
+  tools/bonsai/install.sh       # the slower, more careful alternative"
 fi
 if [ "$deidentify_ready" -ne 1 ]; then
   next_msg="$next_msg
@@ -223,6 +305,7 @@ fi
 next_msg="$next_msg
 
 Optional extras (each README lists requirements and steps):
+  tools/bonsai/install.sh    Bonsai note model (slower, more careful; ~6GB)
   tools/deidentify-helper/   local PII redaction (needs full Xcode)
   tools/session-app/         experimental window app (needs Xcode + a signing identity)"
 printf '%s\n' "$next_msg"

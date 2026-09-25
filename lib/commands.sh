@@ -25,15 +25,14 @@ sc_cmd_doctor() {
     fail=1
   fi
   if [ "$mem_gb" -ge 32 ] 2>/dev/null; then
-    sc_info "        ${mem_gb}GB: comfortable for 'note' (default llama3.1:8b) alongside other apps"
-    sc_info "        (or the stronger, slower qwen2.5:14b — see config.example.sh)"
+    sc_info "        ${mem_gb}GB: comfortable for 'note' with either llama3.1:8b or bonsai"
   elif [ "$mem_gb" -ge 16 ] 2>/dev/null; then
-    sc_info "        ${mem_gb}GB: llama3.1:8b (default) works, but close memory-heavy apps"
-    sc_info "        (browsers, other local models) first. Comfortable otherwise:"
-    sc_info "        soapcap note --model llama3.2:3b"
+    sc_info "        ${mem_gb}GB: llama3.1:8b (default) works; close memory-heavy apps"
+    sc_info "        (browsers, other local models) first. bonsai fits too, but uses"
+    sc_info "        most of this memory while it drafts"
   elif [ "$mem_gb" -gt 0 ] 2>/dev/null; then
-    sc_info "        ${mem_gb}GB: tight for local note drafting. Close other apps and try:"
-    sc_info "        soapcap note --model llama3.2:3b"
+    sc_info "        ${mem_gb}GB: tight for local note drafting — close other apps before"
+    sc_info "        'note'; bonsai needs 16GB+"
   fi
 
   local disk_avail_kb disk_avail_gb
@@ -74,23 +73,44 @@ sc_cmd_doctor() {
   fi
 
   sc_info ""
+  # With bonsai as the default, Ollama is optional: its gaps are "--"
+  # (informational), not WARN, so removing llama3.1:8b on purpose to free
+  # space doesn't read as a problem.
+  local omodel="$SOAPCAP_MODEL" olevel="WARN" oneed="needed for 'note'"
+  if [ "$omodel" = bonsai ]; then
+    omodel="llama3.1:8b"; olevel="--  "; oneed="only needed to switch back to llama3.1:8b"
+  fi
   if command -v ollama >/dev/null 2>&1; then
     local tags
     if tags=$(curl -s --max-time 3 "$SOAPCAP_OLLAMA_HOST/api/tags" 2>/dev/null) && [ -n "$tags" ]; then
-      if printf '%s' "$tags" | jq -e --arg m "$SOAPCAP_MODEL" \
+      if printf '%s' "$tags" | jq -e --arg m "$omodel" \
            '[.models[]?.name] | any(. == $m or startswith($m + ":"))' >/dev/null 2>&1; then
-        sc_info "  ok    ollama running, $SOAPCAP_MODEL pulled — 'note' is ready"
+        if [ "$omodel" = "$SOAPCAP_MODEL" ]; then
+          sc_info "  ok    ollama running, $omodel pulled — 'note' is ready"
+        else
+          sc_info "  ok    ollama running, $omodel pulled — 'note --model $omodel' is ready"
+        fi
       else
-        sc_info "  WARN  ollama running, but $SOAPCAP_MODEL is not pulled"
-        sc_info "        run: ollama pull $SOAPCAP_MODEL"
+        sc_info "  $olevel  ollama running, but $omodel is not pulled — $oneed"
+        sc_info "        run: ollama pull $omodel"
       fi
     else
-      sc_info "  WARN  ollama installed but not running — needed for 'note'"
+      sc_info "  $olevel  ollama installed but not running — $oneed"
       sc_info "        run: brew services start ollama   (or: ollama serve)"
     fi
   else
-    sc_info "  --    ollama not installed — only needed for 'note' (local SOAP generation)"
+    sc_info "  --    ollama not installed — only needed for llama3.1:8b notes"
     sc_info "        install with: brew install ollama"
+  fi
+
+  if sc_bonsai_installed; then
+    sc_info "  ok    Bonsai set up — 'note --model bonsai' is ready"
+  elif [ "$SOAPCAP_MODEL" = bonsai ]; then
+    sc_info "  WARN  your default model is bonsai, but Bonsai isn't set up"
+    sc_info "        set up with: $SC_ROOT/tools/bonsai/install.sh"
+  else
+    sc_info "  --    Bonsai not set up — optional, slower but more careful note model"
+    sc_info "        set up with: $SC_ROOT/tools/bonsai/install.sh"
   fi
 
   if command -v gum >/dev/null 2>&1; then
@@ -124,27 +144,23 @@ sc_cmd_doctor() {
 }
 
 # ---------------------------------------------------------------------------
-# sc_model_catalog — one "tag|size|note" line per candidate model, for
-# `soapcap model`. llama3.2:3b, llama3.1:8b, and qwen2.5:14b reflect actual
-# testing (see README "Draft a note"). The rest postdate that testing and
-# are worth trying, but a leading marker in `note` says exactly how much to
-# trust them: "[not recommended]" means tested and found worse than an
-# existing option; "[untested]" means never run against soapcap's prompts
-# at all (sc_cmd_model gates pulling one behind an extra confirmation,
-# since that marker specifically means "Objective-section accuracy is
-# unverified," not just "not downloaded yet").
+# sc_model_catalog — one "tag|size|note" line per model soapcap has been
+# tested with (the baselines behind README "Draft a note"). Any other
+# Ollama tag still works via --model or SOAPCAP_MODEL, with a warning.
 sc_model_catalog() {
   cat <<'EOF'
-llama3.2:3b|~2GB|Fastest & lightest; prone to inventing plausible clinical detail. Only worth it under real memory pressure.
-llama3.1:8b|~5GB|Best balance of reliability and speed. (default)
-qwen2.5:14b|~9GB|Most reliable at catching real Objective-section detail. ~2.5x slower, wants more RAM headroom.
-qwen3:30b|~19GB (32GB+)|[untested] Mixture-of-experts (3B active params) — faster than its size suggests.
-gemma3:27b|~17GB (32GB+)|[untested] Dense 27B. Different failure modes than the Qwen models, worth comparing.
+llama3.1:8b|~5GB|Default. Fast (usually under a minute). Often assumes a client's pronoun from their name; proofread pronouns and the Objective section.
+bonsai|~6GB (16GB+ Mac)|More careful: best at pronouns and at not inventing in-session reactions. Slower (a few minutes a note). Set up with tools/bonsai/install.sh.
 EOF
 }
 
+# sc_bonsai_installed — true when both halves of the Bonsai setup exist.
+sc_bonsai_installed() {
+  [ -x "$SOAPCAP_BONSAI_SERVER" ] && [ -f "$SOAPCAP_BONSAI_GGUF" ]
+}
+
 # sc_model_table HOST — prints sc_model_catalog as an aligned, wrapped
-# table (~86 columns) with a live PULLED column, one line at a time to
+# table (~86 columns) with a live STATUS column, one line at a time to
 # stdout for the caller to route through sc_info.
 sc_model_table() {
   local host="$1" tag size note status
@@ -153,13 +169,18 @@ sc_model_table() {
   {
     while IFS='|' read -r tag size note; do
       [ -z "$tag" ] && continue
-      status="not pulled"
-      printf '%s\n' "$pulled" | grep -qx "$tag" && status="pulled"
+      if [ "$tag" = bonsai ]; then
+        status="not set up"
+        sc_bonsai_installed && status="installed"
+      else
+        status="not pulled"
+        printf '%s\n' "$pulled" | grep -qx "$tag" && status="pulled"
+      fi
       printf '%s\t%s\t%s\t%s\n' "$tag" "$size" "$status" "$note"
     done <<CATALOG
 $(sc_model_catalog)
 CATALOG
-  } | awk -F'\t' -v tagw=13 -v sizew=15 -v statw=11 -v notew=44 '
+  } | awk -F'\t' -v tagw=13 -v sizew=17 -v statw=11 -v notew=42 '
     function pad(s, w) { return sprintf("%-" w "s", s) }
     BEGIN {
       printf "%s %s %s %s\n", pad("MODEL",tagw), pad("SIZE",sizew), pad("STATUS",statw), "NOTES"
@@ -197,11 +218,10 @@ sc_save_model_config() {
 
 # soapcap model [--host URL]
 #
-# Shows the model catalog as a table (with live pulled/not-pulled status)
-# and, with a real terminal, offers to pick one, pulling it via `ollama
-# pull` if needed and saving the pick as the new default for session/note
-# (still overridable per-run with --model). Read-only when not
-# interactive: just prints the table and the current default.
+# Shows the tested models as a table (with live status) and, with a real
+# terminal, offers to pick one — pulling an Ollama model if needed — and
+# saves the pick as the new default for session/note (still overridable
+# per-run with --model). Read-only when not interactive.
 sc_cmd_model() {
   local host="$SOAPCAP_OLLAMA_HOST"
   while [ $# -gt 0 ]; do
@@ -214,19 +234,22 @@ sc_cmd_model() {
 
   sc_need curl; sc_need jq
   sc_info "Current default: $SOAPCAP_MODEL"
+  if ! sc_model_catalog | cut -d'|' -f1 | grep -qx "$SOAPCAP_MODEL"; then
+    sc_info "  (a custom model — untested with soapcap's prompts)"
+  fi
   sc_info ""
   while IFS= read -r line; do sc_info "$line"; done <<TABLE
 $(sc_model_table "$host")
 TABLE
   sc_info ""
+  sc_info "Other Ollama models work too, untested — see 'soapcap help' (OTHER MODELS)."
+  sc_info ""
 
   [ -t 0 ] || return 0
 
   # $SOAPCAP_MODEL always leads the choices (and is the bare-Enter
-  # default), so hitting Enter here never silently changes anything.
-  # It's llama3.1:8b on first-time setup (config.sh's absence just leaves
-  # common.sh's own compiled-in default in place) and whatever was last
-  # saved on every run after that.
+  # default), so hitting Enter here never silently changes anything —
+  # including when it's a custom model set in config.sh.
   local tag tags=("$SOAPCAP_MODEL")
   while IFS='|' read -r tag _ _; do
     [ -z "$tag" ] || [ "$tag" = "$SOAPCAP_MODEL" ] && continue
@@ -238,26 +261,23 @@ CATALOG
   local chosen
   chosen=$(sc_choose "Pick a model:" "${tags[@]}")
 
-  local pulled
-  pulled=$(curl -s --max-time 3 "$host/api/tags" 2>/dev/null | jq -r '.models[]?.name // empty' 2>/dev/null)
-  if ! printf '%s\n' "$pulled" | grep -qx "$chosen"; then
-    local note
-    note=$(sc_model_catalog | awk -F'|' -v t="$chosen" '$1 == t { print $3 }')
-    case "$note" in
-      '[untested]'*)
-        sc_info "$chosen hasn't been run against soapcap's prompts — Objective-section"
-        sc_info "accuracy in particular is unverified (see README \"Draft a note\")."
-        sc_confirm "Pull $chosen anyway?" || { sc_info "Not pulled — default unchanged ($SOAPCAP_MODEL)."; return 1; }
-        ;;
-      *)
-        sc_confirm "$chosen isn't pulled yet — pull it now?" || { sc_info "Not pulled — default unchanged ($SOAPCAP_MODEL)."; return 1; }
-        ;;
-    esac
-    if ! command -v ollama >/dev/null 2>&1; then
-      sc_err "ollama CLI not found on PATH — install with: brew install ollama"
+  if [ "$chosen" = bonsai ]; then
+    if ! sc_bonsai_installed; then
+      sc_err "Bonsai isn't set up yet — run: $SC_ROOT/tools/bonsai/install.sh"
+      sc_info "Default unchanged ($SOAPCAP_MODEL)."
       return 1
     fi
-    ollama pull "$chosen" || { sc_err "pull failed — default unchanged ($SOAPCAP_MODEL)"; return 1; }
+  else
+    local pulled
+    pulled=$(curl -s --max-time 3 "$host/api/tags" 2>/dev/null | jq -r '.models[]?.name // empty' 2>/dev/null)
+    if ! printf '%s\n' "$pulled" | grep -qx "$chosen"; then
+      sc_confirm "$chosen isn't pulled yet — pull it now?" || { sc_info "Not pulled — default unchanged ($SOAPCAP_MODEL)."; return 1; }
+      if ! command -v ollama >/dev/null 2>&1; then
+        sc_err "ollama CLI not found on PATH — install with: brew install ollama"
+        return 1
+      fi
+      ollama pull "$chosen" || { sc_err "pull failed — default unchanged ($SOAPCAP_MODEL)"; return 1; }
+    fi
   fi
 
   sc_save_model_config "$chosen"
@@ -452,28 +472,73 @@ sc_strip_trailing_disclaimer() {
   '
 }
 
-# sc_generate_note <format> <model> <host> <transcript>
-#
-# Asks a local Ollama model to draft a note from a transcript. Talks to
-# Ollama's HTTP API directly rather than shelling out to `ollama run` — the
-# CLI renders a spinner/progress UI even when its own stdout isn't a real
-# terminal, which corrupts captured output; the API returns one clean JSON
-# response. The curl call itself runs under `gum spin` when available, safe
-# from that same corruption because the response goes straight to a temp
-# file (-o), never through gum's own stdout. On success sets SC_NOTE and
-# returns 0; on failure prints an actionable error via sc_err and returns
-# 1 — it does NOT exit, so a caller
-# holding an already-captured transcript (sc_cmd_session) can report the
-# failure without losing it. sc_cmd_note, which has nothing else at stake,
-# turns that failure straight into sc_die.
-sc_generate_note() {
-  SC_NOTE=""
-  local format="$1" model="$2" host="$3" transcript="$4"
+# sc_estimate_ctx PROMPT HEADROOM FLOOR — prints a context-window size for
+# PROMPT. A context too small for the prompt fails silently: the model
+# just loses part of it (often the rules, which come first) and produces
+# malformed, repetitive output with invented section headers. ~1.5
+# tokens/word is a safety margin over English's real ~0.75 words/token;
+# HEADROOM covers the response. At least FLOOR, capped at 32768, rounded
+# up to a multiple of 1024.
+sc_estimate_ctx() {
+  local words ctx
+  words=$(printf '%s' "$1" | wc -w | tr -d ' ')
+  ctx=$(( words * 3 / 2 + $2 ))
+  [ "$ctx" -lt "$3" ] && ctx=$3
+  [ "$ctx" -gt 32768 ] && ctx=32768
+  printf '%s\n' $(( ( (ctx + 1023) / 1024 ) * 1024 ))
+}
 
-  local prompt_file="$SC_ROOT/prompts/$format.md"
-  if [ ! -f "$prompt_file" ]; then
-    sc_err "unknown format '$format' (no $prompt_file)"; return 1
+# sc_spin_post TITLE URL PAYLOAD OUTFILE MAX_SECONDS — POSTs PAYLOAD as JSON
+# to URL, response body to OUTFILE, under `gum spin` when available.
+# Returns curl's own exit status. The response goes to a file (-o), never
+# through gum's stdout, so the spinner can't corrupt it. PAYLOAD holds the
+# transcript, so it goes to curl from a private temp file rather than as
+# an argument, where any local process could read it with `ps`.
+sc_spin_post() {
+  local title="$1" url="$2" payload="$3" out="$4" max="$5" body rc
+  sc_tmpfile body || return 1
+  printf '%s' "$payload" > "$body"
+  if [ -t 2 ] && command -v gum >/dev/null 2>&1; then
+    # TERM_PROGRAM=Apple_Terminal for this one call only: bubbletea (gum's
+    # TUI library) probes terminal capabilities (modes 2026/2027) on every
+    # non-Apple TERM_PROGRAM, and a short-lived spinner can exit before the
+    # terminal's reply arrives, leaking raw "^[[?2026;2$y..." bytes onto
+    # the next prompt in iTerm2/ghostty/kitty/alacritty/wezterm -- a known,
+    # still-open bubbletea bug (github.com/charmbracelet/bubbletea#1590).
+    # Confirmed no other output differs (byte-identical spin apart from
+    # the query itself) before relying on this.
+    TERM_PROGRAM=Apple_Terminal gum spin --title "$title" -- \
+      curl -s --max-time "$max" -X POST "$url" \
+        -H 'Content-Type: application/json' -d "@$body" -o "$out"
+    rc=$?
+  else
+    sc_info "$title"
+    # Backgrounded + `wait` because bash holds a signal until a foreground
+    # command finishes — minutes, here — so a SIGTERM (how the window app
+    # stops soapcap) would otherwise go unanswered, and a second one kills
+    # bash without its EXIT trap, orphaning Bonsai's server.
+    curl -s --max-time "$max" -X POST "$url" \
+      -H 'Content-Type: application/json' -d "@$body" -o "$out" &
+    local cpid=$!
+    # shellcheck disable=SC2064  # expand $cpid now, on purpose
+    trap "kill $cpid 2>/dev/null; exit 143" TERM
+    # shellcheck disable=SC2064
+    trap "kill $cpid 2>/dev/null; exit 130" INT
+    wait "$cpid"
+    rc=$?
+    trap - INT TERM
   fi
+  rm -f "$body"
+  return "$rc"
+}
+
+# sc_ollama_generate MODEL HOST PROMPT FORMAT — sets SC_RAW_NOTE. Talks to
+# Ollama's HTTP API directly rather than shelling out to `ollama run`: the
+# CLI renders a spinner/progress UI even when its stdout isn't a terminal,
+# which corrupts captured output.
+sc_ollama_generate() {
+  SC_RAW_NOTE=""
+  local model="$1" host="$2" prompt="$3" format="$4"
 
   local tags
   if ! tags=$(curl -s --max-time 5 "$host/api/tags"); then
@@ -486,54 +551,16 @@ sc_generate_note() {
     return 1
   fi
 
-  local system_prompt full_prompt payload response note
-  system_prompt=$(cat "$prompt_file")
-  full_prompt="$system_prompt
-
-TRANSCRIPT:
-$transcript"
-
-  # Ollama's context window defaults to a small value (historically 2048)
-  # unless a request explicitly asks for more. A long transcript's prompt
-  # can silently exceed that with no error -- the model just loses part of
-  # the prompt (often the rules, which come first) and produces malformed,
-  # repetitive output with invented section headers. Size num_ctx to the
-  # actual prompt instead of trusting the default: ~1.5 tokens/word as a
-  # safety margin over English's real ~0.75 words/token, plus headroom for
-  # the response, floored at 4096 and capped at 32768.
-  local word_count est_tokens ctx
-  word_count=$(printf '%s' "$full_prompt" | wc -w | tr -d ' ')
-  est_tokens=$(( word_count * 3 / 2 + 1024 ))
-  ctx=4096
-  [ "$est_tokens" -gt "$ctx" ] && ctx=$est_tokens
-  [ "$ctx" -gt 32768 ] && ctx=32768
-  ctx=$(( ( (ctx + 1023) / 1024 ) * 1024 ))
-
-  payload=$(jq -n --arg model "$model" --arg prompt "$full_prompt" --argjson num_ctx "$ctx" \
+  # Ollama's own default context (historically 2048) is far too small.
+  local ctx payload resp_file rc response
+  ctx=$(sc_estimate_ctx "$prompt" 1024 4096)
+  payload=$(jq -n --arg model "$model" --arg prompt "$prompt" --argjson num_ctx "$ctx" \
     '{model: $model, prompt: $prompt, stream: false, options: {num_ctx: $num_ctx}}')
 
-  local title="Drafting a $format note with ${model}…"
-  local resp_file rc
-  resp_file=$(mktemp) || { sc_err "could not create a temp file"; return 1; }
-  if command -v gum >/dev/null 2>&1; then
-    # TERM_PROGRAM=Apple_Terminal for this one call only: bubbletea (gum's
-    # TUI library) probes terminal capabilities (modes 2026/2027) on every
-    # non-Apple TERM_PROGRAM, and a short-lived spinner can exit before the
-    # terminal's reply arrives, leaking raw "^[[?2026;2$y..." bytes onto
-    # the next prompt in iTerm2/ghostty/kitty/alacritty/wezterm -- a known,
-    # still-open bubbletea bug (github.com/charmbracelet/bubbletea#1590).
-    # Confirmed no other output differs (byte-identical spin apart from
-    # the query itself) before relying on this.
-    TERM_PROGRAM=Apple_Terminal gum spin --title "$title" -- \
-      curl -s --max-time 300 -X POST "$host/api/generate" \
-        -H 'Content-Type: application/json' -d "$payload" -o "$resp_file"
-    rc=$?
-  else
-    sc_info "$title"
-    curl -s --max-time 300 -X POST "$host/api/generate" \
-      -H 'Content-Type: application/json' -d "$payload" -o "$resp_file"
-    rc=$?
-  fi
+  sc_tmpfile resp_file || return 1
+  sc_spin_post "Drafting a $format note with ${model}…" "$host/api/generate" \
+    "$payload" "$resp_file" 300
+  rc=$?
   response=$(cat "$resp_file"); rm -f "$resp_file"
   # A mid-response --max-time timeout (curl exit 28) leaves a non-empty but
   # partial/invalid file -- check curl's own exit status, not just whether
@@ -542,15 +569,129 @@ $transcript"
   if [ "$rc" -ne 0 ] || [ -z "$response" ]; then
     sc_err "request to Ollama failed"; return 1
   fi
-
   if printf '%s' "$response" | jq -e '.error' >/dev/null 2>&1; then
     sc_err "Ollama error: $(printf '%s' "$response" | jq -r '.error')"
     return 1
   fi
-  note=$(printf '%s' "$response" | jq -r '.response // empty')
-  if [ -z "$note" ]; then
-    sc_err "Ollama returned no content"; return 1
+  SC_RAW_NOTE=$(printf '%s' "$response" | jq -r '.response // empty')
+  [ -n "$SC_RAW_NOTE" ] || { sc_err "Ollama returned no content"; return 1; }
+}
+
+# sc_bonsai_start CTX — launches llama-server with the Bonsai GGUF on
+# 127.0.0.1:$SOAPCAP_BONSAI_PORT and waits until it has loaded. Sets
+# SC_BONSAI_PID; sc_bonsai_stop (also run by the EXIT trap) undoes it.
+# Server flags match the ones soapcap's prompts were tested with.
+sc_bonsai_start() {
+  local ctx="$1" url="http://127.0.0.1:$SOAPCAP_BONSAI_PORT"
+  if [ ! -x "$SOAPCAP_BONSAI_SERVER" ] || [ ! -f "$SOAPCAP_BONSAI_GGUF" ]; then
+    sc_err "Bonsai isn't set up — expected llama-server at $SOAPCAP_BONSAI_SERVER"
+    sc_err "  and the model at $SOAPCAP_BONSAI_GGUF. Set it up with: $SC_ROOT/tools/bonsai/install.sh"
+    return 1
   fi
+  # Anything already answering here would silently draft the note with
+  # whatever model it serves.
+  if curl -s --max-time 2 "$url/health" >/dev/null 2>&1; then
+    sc_err "something is already listening on port $SOAPCAP_BONSAI_PORT — stop it, or set"
+    sc_err "  SOAPCAP_BONSAI_PORT to a free port in ~/.config/soapcap/config.sh"
+    return 1
+  fi
+
+  sc_tmpfile SC_BONSAI_LOG || return 1
+  "$SOAPCAP_BONSAI_SERVER" -m "$SOAPCAP_BONSAI_GGUF" --host 127.0.0.1 --port "$SOAPCAP_BONSAI_PORT" \
+    -ngl 99 -c "$ctx" --parallel 1 --cache-type-k q8_0 --cache-type-v q8_0 \
+    >"$SC_BONSAI_LOG" 2>&1 &
+  SC_BONSAI_PID=$!
+
+  sc_info "Loading Bonsai…"
+  local i=0
+  while [ "$i" -lt 180 ]; do
+    if ! kill -0 "$SC_BONSAI_PID" 2>/dev/null; then
+      sc_err "llama-server exited while loading Bonsai — last lines of its log:"
+      tail -n 5 "$SC_BONSAI_LOG" >&2
+      sc_bonsai_stop
+      return 1
+    fi
+    if curl -s --max-time 2 "$url/health" 2>/dev/null | jq -e '.status == "ok"' >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+    i=$((i + 1))
+  done
+  sc_err "Bonsai didn't finish loading within 180s"
+  sc_bonsai_stop
+  return 1
+}
+
+# sc_bonsai_generate PROMPT FORMAT — sets SC_RAW_NOTE. Starts the server,
+# drafts one note, and stops the server straight away, so its ~6GB is free
+# again before anything else (e.g. de-identify) runs. Sampling matches the
+# settings soapcap's prompts were tested with.
+sc_bonsai_generate() {
+  SC_RAW_NOTE=""
+  local prompt="$1" format="$2" ctx payload resp_file rc response
+  # 2048 of headroom: the request allows up to 2000 output tokens.
+  ctx=$(sc_estimate_ctx "$prompt" 2048 8192)
+  sc_bonsai_start "$ctx" || return 1
+
+  payload=$(jq -n --arg p "$prompt" '{
+    messages: [{role: "user", content: $p}],
+    temperature: 0.7, top_p: 0.8, top_k: 20, max_tokens: 2000, stream: false,
+    chat_template_kwargs: {enable_thinking: false}
+  }')
+  sc_tmpfile resp_file || { sc_bonsai_stop; return 1; }
+  sc_spin_post "Drafting a $format note with Bonsai (this takes a few minutes)…" \
+    "http://127.0.0.1:$SOAPCAP_BONSAI_PORT/v1/chat/completions" "$payload" "$resp_file" 900
+  rc=$?
+  sc_bonsai_stop
+  response=$(cat "$resp_file"); rm -f "$resp_file"
+
+  if [ "$rc" -ne 0 ] || [ -z "$response" ]; then
+    sc_err "request to Bonsai failed"; return 1
+  fi
+  if printf '%s' "$response" | jq -e '.error' >/dev/null 2>&1; then
+    sc_err "Bonsai error: $(printf '%s' "$response" | jq -r '.error.message // .error')"
+    return 1
+  fi
+  SC_RAW_NOTE=$(printf '%s' "$response" | jq -r '.choices[0].message.content // empty')
+  [ -n "$SC_RAW_NOTE" ] || { sc_err "Bonsai returned no content"; return 1; }
+  if [ "$(printf '%s' "$response" | jq -r '.choices[0].finish_reason // empty')" = length ]; then
+    sc_err "warning: Bonsai hit its output limit — the end of the note may be cut off"
+  fi
+  return 0
+}
+
+# sc_generate_note <format> <model> <host> <transcript>
+#
+# Drafts a note from a transcript with a local model: `bonsai` via
+# llama-server, anything else via Ollama. On success sets SC_NOTE and
+# returns 0; on failure prints an actionable error via sc_err and returns
+# 1 — it does NOT exit, so a caller holding an already-captured transcript
+# (sc_cmd_session) can report the failure without losing it. sc_cmd_note,
+# which has nothing else at stake, turns that failure straight into sc_die.
+sc_generate_note() {
+  SC_NOTE=""
+  local format="$1" model="$2" host="$3" transcript="$4"
+
+  local prompt_file="$SC_ROOT/prompts/$format.md"
+  if [ ! -f "$prompt_file" ]; then
+    sc_err "unknown format '$format' (no $prompt_file)"; return 1
+  fi
+
+  local full_prompt note
+  full_prompt="$(cat "$prompt_file")
+
+TRANSCRIPT:
+$transcript"
+
+  if ! sc_model_catalog | cut -d'|' -f1 | grep -qx "$model"; then
+    sc_info "note: $model hasn't been tested with soapcap's prompts — proofread it with extra care."
+  fi
+
+  case "$model" in
+    bonsai) sc_bonsai_generate "$full_prompt" "$format" || return 1 ;;
+    *)      sc_ollama_generate "$model" "$host" "$full_prompt" "$format" || return 1 ;;
+  esac
+  note="$SC_RAW_NOTE"
 
   # Three safety nets against known model misbehavior — see each
   # function's own comment for the specific failure it guards against.

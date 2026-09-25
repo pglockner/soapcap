@@ -20,13 +20,18 @@ SOAPCAP_LOCALE=""
 # SOAPCAP_DEDUPE_THRESHOLD=0.7
 # SOAPCAP_DEDUPE_MINWORDS=2
 
-# `note` — local SOAP/DAP/BIRP generation via Ollama. Defaults shown;
-# uncomment to tune. See README "note" for why llama3.1:8b (~5GB) is the
-# default over the smaller/faster llama3.2:3b (~2GB) despite the memory
-# cost — real testing found 3b unreliable at not fabricating clinical
-# Objective-section content.
-# SOAPCAP_MODEL="llama3.1:8b"
-# Stronger but heavier (~9GB, ~2.5x slower) — see README "Draft a note":
-# SOAPCAP_MODEL="qwen2.5:14b"
+# `note` — local SOAP/DAP/BIRP generation. Defaults shown; uncomment to
+# tune. Tested models: llama3.1:8b (Ollama, the default) and bonsai
+# (tools/bonsai/install.sh). Any other Ollama tag works but is untested
+# with soapcap's prompts — see README "Draft a note".
+# SOAPCAP_MODEL="llama3.1:8b"       # or "bonsai"
 # SOAPCAP_FORMAT="soap"             # soap | dap | birp
 # SOAPCAP_OLLAMA_HOST="http://localhost:11434"
+
+# Bonsai's install location (export it when running tools/bonsai/install.sh
+# too, if you change it) — or instead point the two paths at a llama-server
+# build of PrismML's llama.cpp fork and the PTQ1_0 GGUF you already have.
+# SOAPCAP_BONSAI_DIR="$HOME/.local/share/soapcap/bonsai"
+# SOAPCAP_BONSAI_SERVER="$HOME/somewhere/llama.cpp/build/bin/llama-server"
+# SOAPCAP_BONSAI_GGUF="$HOME/somewhere/Ternary-Bonsai-2-27B-PTQ1_0.gguf"
+# SOAPCAP_BONSAI_PORT=18080         # localhost port for its temporary server

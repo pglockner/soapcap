@@ -3,11 +3,16 @@
 # STUB_OLLAMA_MODE: up (default) | down (connection refused, exit 7) |
 # error (generate returns an Ollama-style error) | empty (generate returns
 # an empty response). STUB_OLLAMA_MODEL: the one model "pulled".
-# STUB_CURL_LOG receives each URL; STUB_CURL_PAYLOAD the last -d payload.
+# STUB_CURL_LOG receives each URL; STUB_CURL_PAYLOAD the last -d payload
+# (read from the file for -d @FILE); STUB_CURL_ARGS every raw argument list.
+# Bonsai's llama-server: /health answers only while the stub llama-server
+# is running (per STUB_LLAMA_LOG), or always with STUB_LLAMA_BUSY=1.
+# STUB_BONSAI_REPLY: ok (default) | error | length | hang.
+[ -n "${STUB_CURL_ARGS:-}" ] && printf '%s\n' "$*" >> "$STUB_CURL_ARGS"
 url=""; payload=""; out=""
 while [ $# -gt 0 ]; do
   case "$1" in
-    -d) payload="$2"; shift 2 ;;
+    -d) case "$2" in @*) payload=$(cat "${2#@}") ;; *) payload="$2" ;; esac; shift 2 ;;
     -o) out="$2"; shift 2 ;;
     http*) url="$1"; shift ;;
     *) shift ;;
@@ -29,5 +34,17 @@ case "$url" in
       error) emit '{"error":"boom"}' ;;
       empty) emit '{"response":""}' ;;
       *) emit '{"response":"SUBJECTIVE:\nStub note\n\nOBJECTIVE:\nNo observable presentation details available from a text-only transcript.\n\nASSESSMENT:\nStub assessment.\n\nPLAN:\nStub plan."}' ;;
+    esac ;;
+  */health)
+    [ "${STUB_LLAMA_BUSY:-}" = 1 ] && { printf '{"status":"ok"}'; exit 0; }
+    [ "$(tail -n 1 "${STUB_LLAMA_LOG:-/dev/null}" 2>/dev/null | cut -d' ' -f1)" = started ] || exit 7
+    printf '{"status":"ok"}' ;;
+  */v1/chat/completions)
+    note='SUBJECTIVE:\nBonsai stub note\n\nOBJECTIVE:\nStub.\n\nASSESSMENT:\nStub.\n\nPLAN:\nStub.'
+    case "${STUB_BONSAI_REPLY:-ok}" in
+      error)  emit '{"error":{"code":500,"message":"boom","type":"server_error"}}' ;;
+      length) emit "{\"choices\":[{\"message\":{\"content\":\"$note\"},\"finish_reason\":\"length\"}]}" ;;
+      hang)   sleep 15; exit 28 ;;
+      *)      emit "{\"choices\":[{\"message\":{\"content\":\"$note\"},\"finish_reason\":\"stop\"}]}" ;;
     esac ;;
 esac

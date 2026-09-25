@@ -6,14 +6,10 @@ SOAPCAP_MIC_LABEL="${SOAPCAP_MIC_LABEL:-Therapist}"
 SOAPCAP_SYSTEM_LABEL="${SOAPCAP_SYSTEM_LABEL:-Client}"
 SOAPCAP_LOCALE="${SOAPCAP_LOCALE:-}"
 
-# `note` (local SOAP/DAP/BIRP generation via Ollama). llama3.1:8b, not the
-# smaller/faster llama3.2:3b, is the default — see README "note" section:
-# 3b reliably either fabricates clinical Objective-section content or
-# (with a prompt strong enough to stop that) swings the other way and
-# under-reports real observations; 8b got both right in testing. Needs
-# ~5GB free memory beyond whatever else is running — see README "Your
-# machine". Fall back to llama3.2:3b with `--model` if that's tight, but
-# expect to proofread the Objective section more carefully.
+# `note` (local SOAP/DAP/BIRP generation). llama3.1:8b via Ollama is the
+# default; `bonsai` is the other tested choice. Any other Ollama tag works
+# but is untested with soapcap's prompts — see sc_model_catalog and README
+# "Draft a note".
 SOAPCAP_MODEL="${SOAPCAP_MODEL:-llama3.1:8b}"
 SOAPCAP_FORMAT="${SOAPCAP_FORMAT:-soap}"
 SOAPCAP_OLLAMA_HOST="${SOAPCAP_OLLAMA_HOST:-http://localhost:11434}"
@@ -33,6 +29,14 @@ _sc_cfg="${SOAPCAP_CONFIG:-$HOME/.config/soapcap/config.sh}"
 # shellcheck source=/dev/null
 [ -f "$_sc_cfg" ] && . "$_sc_cfg"
 
+# `--model bonsai` (Bonsai 2 27B via PrismML's llama.cpp fork, set up by
+# tools/bonsai/install.sh). Resolved after config.sh so a SOAPCAP_BONSAI_DIR
+# set there also moves the two paths derived from it.
+SOAPCAP_BONSAI_DIR="${SOAPCAP_BONSAI_DIR:-$HOME/.local/share/soapcap/bonsai}"
+SOAPCAP_BONSAI_SERVER="${SOAPCAP_BONSAI_SERVER:-$SOAPCAP_BONSAI_DIR/llama.cpp/build/bin/llama-server}"
+SOAPCAP_BONSAI_GGUF="${SOAPCAP_BONSAI_GGUF:-$SOAPCAP_BONSAI_DIR/Ternary-Bonsai-2-27B-PTQ1_0.gguf}"
+SOAPCAP_BONSAI_PORT="${SOAPCAP_BONSAI_PORT:-18080}"
+
 # ---- logging (everything human-facing goes to stderr; stdout is data) -------
 sc_err()  { printf 'soapcap: %s\n' "$*" >&2; }
 sc_info() { printf '%s\n' "$*" >&2; }
@@ -42,10 +46,48 @@ sc_die()  { sc_err "$*"; exit 1; }
 # SC_WORKDIR holds a per-run mktemp dir that only ever contains a FIFO and
 # yap's stderr. Removed on every exit path.
 sc_cleanup() {
+  sc_bonsai_stop
   if [ -n "${SC_WORKDIR:-}" ] && [ -d "${SC_WORKDIR:-}" ]; then
     rm -rf "$SC_WORKDIR"
   fi
   SC_WORKDIR=""
+  # shellcheck disable=SC2086  # a space-separated list of mktemp paths
+  [ -n "${SC_TMP_FILES:-}" ] && rm -f $SC_TMP_FILES
+  SC_TMP_FILES=""
+}
+
+# sc_tmpfile VAR — creates a private temp file, stores its path in VAR,
+# and registers it so sc_cleanup removes it on every exit path, including
+# a kill mid-request (these files hold the transcript or the note).
+sc_tmpfile() {
+  local f
+  f=$(mktemp) || { sc_err "could not create a temp file"; return 1; }
+  SC_TMP_FILES="${SC_TMP_FILES:-} $f"
+  printf -v "$1" '%s' "$f"
+}
+
+# sc_bonsai_stop — stops the llama-server sc_bonsai_start launched, if any,
+# and waits for it so its memory is actually released before we go on. Safe
+# to call repeatedly; also runs from the EXIT trap, because a background
+# child of a non-interactive script ignores the terminal's Ctrl-C and would
+# otherwise outlive soapcap holding ~6GB.
+sc_bonsai_stop() {
+  if [ -n "${SC_BONSAI_PID:-}" ]; then
+    kill "$SC_BONSAI_PID" 2>/dev/null
+    # llama-server finishes an in-flight request before honouring SIGTERM
+    # (~30s observed mid-note); give it 3s, then force it.
+    local i=0
+    while [ "$i" -lt 30 ] && kill -0 "$SC_BONSAI_PID" 2>/dev/null; do
+      sleep 0.1; i=$((i + 1))
+    done
+    kill -KILL "$SC_BONSAI_PID" 2>/dev/null
+    wait "$SC_BONSAI_PID" 2>/dev/null
+  fi
+  SC_BONSAI_PID=""
+  if [ -n "${SC_BONSAI_LOG:-}" ]; then
+    rm -f "$SC_BONSAI_LOG"
+  fi
+  SC_BONSAI_LOG=""
 }
 
 sc_need() {
@@ -187,18 +229,18 @@ sc_pick_transcript_file() {
 sc_usage() {
   cat >&2 <<'EOF'
 soapcap — on-device capture + transcription of a telehealth session, with
-          local SOAP/DAP/BIRP note drafting via Ollama
+          local SOAP/DAP/BIRP note drafting
 
 USAGE
   soapcap doctor                  Check OS/hardware, tools, and permissions
   soapcap live [opts]             Capture a live session -> transcript
   soapcap transcribe FILE [opts]  Transcribe an existing recording -> transcript
   soapcap note [FILE] [opts]      Transcript (FILE or stdin) -> SOAP/DAP/BIRP note
-                                  via a local Ollama model
+                                  via a local model
   soapcap deidentify [FILE] [opts]   Transcript (FILE or stdin) -> best-effort
                                   local PII redaction (needs tools/deidentify-helper)
   soapcap model [--host URL]      Show/pick the model session & note default
-                                  to, pulling it via Ollama if needed
+                                  to (llama3.1:8b or bonsai)
   soapcap session [opts]          Guided: capture, then ask about a note and
                                   the clipboard — what soapcap.command runs
   soapcap version | help
@@ -219,7 +261,7 @@ OPTIONS (live / transcribe / session)
 
 OPTIONS (note / session)
   --out FILE            Write the note to FILE (default: stdout only)
-  --model NAME          Ollama model tag       (default: llama3.1:8b)
+  --model NAME          llama3.1:8b (default) or bonsai — see OTHER MODELS
   --format soap|dap|birp Note format           (default: soap)
   --host URL            Ollama server URL      (default: http://localhost:11434)
 
@@ -230,8 +272,22 @@ OPTIONS (deidentify)
   --out FILE            Write the de-identified transcript to FILE (default: stdout)
   --clipboard            Also copy the result to the clipboard (pbcopy)
 
+MODELS
+  llama3.1:8b           Default. Fast; Ollama.
+  bonsai                Slower, more careful. Set up once with
+                        tools/bonsai/install.sh (builds a llama.cpp fork,
+                        ~6GB download; wants a 16GB+ Mac).
+
+OTHER MODELS (untested)
+  Any other Ollama model works too, but soapcap's prompts haven't been
+  tested with it — proofread its notes closely. Pull it, then name it:
+    ollama pull qwen2.5:14b
+    soapcap note --model qwen2.5:14b transcript.txt
+  To make it stick, set SOAPCAP_MODEL="qwen2.5:14b" in
+  ~/.config/soapcap/config.sh.
+
 EXAMPLES
-  soapcap session                                    # double-click via soapcap.command
+  soapcap session                                   # double-click via soapcap.command
   soapcap live | soapcap note
   soapcap live | soapcap deidentify | soapcap note
   soapcap transcribe call.m4a | soapcap note --format dap --out note.md

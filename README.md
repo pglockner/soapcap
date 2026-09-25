@@ -6,7 +6,8 @@ download, no virtual audio devices, and by default **nothing written to
 disk**.
 
 `soapcap note` then drafts a SOAP/DAP/BIRP note from that transcript with a
-**local Ollama model** — nothing leaves the machine. A cloud path
+**local model** (llama3.1:8b via Ollama, or the optional Bonsai) — nothing
+leaves the machine. A cloud path
 (SoapNoteAI/Upheal) isn't built yet; see [Roadmap](#roadmap).
 
 ---
@@ -30,7 +31,7 @@ Zoom / Meet / Teams / Doxy.me                   your microphone
                     Client: ...             ← or --out FILE
                                     │
                                     ▼  soapcap note
-                              Ollama (local)
+                        Ollama or Bonsai (local)
                                     │
                                     ▼
                     SUBJECTIVE: ...         ← stdout (default)
@@ -52,7 +53,9 @@ with any conferencing tool.
   [Without headphones](#without-headphones).
 - **For `note`**: [Ollama](https://ollama.com) and ~5GB free memory beyond
   whatever else is running (default model `llama3.1:8b`). Optional — capture
-  and transcription work without it.
+  and transcription work without it. The optional **Bonsai** model instead
+  needs a 16GB+ Mac, Xcode Command Line Tools, and ~6GB of disk — see
+  [Draft a note](#draft-a-note).
 - **Optional polish**, both auto-detected, neither required: **gum** (nicer
   `session` prompts) and **fzf** (browse for a transcript file in `note`).
   See [Nicer prompts and file picking](#nicer-prompts-and-file-picking).
@@ -67,8 +70,10 @@ cd soapcap
 ./install.sh          # brew install yap jq (force-linked — macOS 26 ships
                        # its own /usr/bin/jq, which can otherwise shadow
                        # Homebrew's), symlink onto PATH, run doctor,
-                       # offer a Desktop shortcut + gum + fzf, offer to
-                       # install Ollama and pull llama3.1:8b
+                       # offer a Desktop shortcut + gum + fzf, then ask
+                       # which note model(s) to set up — llama3.1:8b,
+                       # Bonsai, both, or none (re-runs only offer what
+                       # isn't installed yet)
 ```
 
 No git installed? Click **Code → Download ZIP** on the
@@ -103,21 +108,22 @@ outright):
 ```
   ok    macOS 26.x
   ok    Apple M5, 16GB unified memory, 10 cores
-        16GB: llama3.1:8b (default) works, but close memory-heavy apps
-        (browsers, other local models) first. Comfortable otherwise:
-        soapcap note --model llama3.2:3b
+        16GB: llama3.1:8b (default) works; close memory-heavy apps
+        (browsers, other local models) first. bonsai fits too, but uses
+        most of this memory while it drafts
   ok    yap 1.2.1 (/opt/homebrew/bin/yap)
   ok    jq 1.8.2 (/opt/homebrew/bin/jq)
   ok    yap ran and returned valid JSON — permissions look granted
 
   ok    ollama running, llama3.1:8b pulled — 'note' is ready
+  ok    Bonsai set up — 'note --model bonsai' is ready
   ok    gum present — 'session' prompts use it for arrow-key choose/confirm
   ok    fzf present — 'note' with no FILE can browse for one
 
 Ready.
 ```
 
-`ollama`/`gum`/`fzf` lines are informational — `live`/`transcribe` work
+`ollama`/Bonsai/`gum`/`fzf` lines are informational — `live`/`transcribe` work
 without any of them. `install.sh` offers to set up `note` (Ollama +
 `llama3.1:8b`) already; by hand:
 
@@ -127,8 +133,8 @@ brew services start ollama       # keeps it running across reboots
 ollama pull llama3.1:8b          # ~5GB, one time
 ```
 
-Change the model `session`/`note` default any time with `soapcap model` —
-see [Draft a note](#draft-a-note).
+Switch the `session`/`note` default between `llama3.1:8b` and `bonsai` any
+time with `soapcap model` — see [Draft a note](#draft-a-note).
 
 Optional config: `cp config.example.sh ~/.config/soapcap/config.sh` and edit
 (speaker labels, locale, note model/format, dedupe tuning).
@@ -188,12 +194,16 @@ soapcap note ~/sessions/2026-09-10.transcript      # or from a saved file
 soapcap note --format dap --out ~/notes/draft.md   # DAP instead of SOAP
 ```
 
-Sends the transcript to a **local** Ollama model (default `llama3.1:8b`).
-The prompt (`prompts/*.md` — read or edit it directly) requires: use only
+Sends the transcript to a **local** model (default `llama3.1:8b` via
+Ollama). The prompt (`prompts/*.md` — read or edit it directly) requires: use only
 what's in the transcript, never assign an undiscussed diagnosis, always
 surface anything suggesting risk (self-harm, harm to others, abuse, crisis),
 and write "Not addressed in this session" rather than pad a section out.
 Formats: `soap` (default), `dap`, `birp`.
+
+To try it without a real session, use the fictional transcripts in
+[`samples/transcripts/`](samples/transcripts/). Its README explains what
+each one tests, for prompt tuning and for de-identification.
 
 **Read every note before it goes near a chart.** It's still an LLM. Mistakes
 concentrate in the Objective section, the one part that requires telling an
@@ -201,26 +211,68 @@ actual in-the-room observation apart from a client's own description of how
 they've been feeling — a smaller model can either invent detail that isn't
 there or miss detail that is.
 
-`note` sizes Ollama's context window (`num_ctx`) to the transcript's length,
-so long sessions aren't silently truncated.
+`note` sizes the model's context window to the transcript's length, so
+long sessions aren't silently truncated.
 
-**Models:**
+**Models** — the two soapcap's prompts are tested with:
 
 | Model | Size | Notes |
 |---|---|---|
-| `llama3.1:8b` | ~5GB | Best balance of reliability and speed. **Default.** Doesn't invent observations, but can under-read a client's own present-moment reaction ("I'm getting choked up") as just a general feeling rather than something that happened in the room. |
-| `llama3.2:3b` | ~2GB | Fastest and lightest, but prone to inventing plausible-sounding clinical detail that isn't in the transcript. Only worth it under real memory pressure. |
-| `qwen2.5:14b` | ~9GB | Most reliable at catching real Objective-section detail, including a client's own in-the-moment reactions. ~2.5x the generation time and more RAM headroom; occasionally adds a little unstated color rather than bare extraction. |
-| `qwen3:30b` | ~19GB (32GB+ systems) | **Untested.** Mixture-of-experts (3B active params), so faster than its size suggests. |
-| `gemma3:27b` | ~17GB (32GB+ systems) | **Untested.** Dense 27B; different failure modes than the Qwen models, worth comparing. |
+| `llama3.1:8b` | ~5GB | **Default.** Fast (usually under a minute a note). In testing it often assumed a client's pronoun from their name alone (in SOAP notes, most of the time), and sometimes escalated a client's "choked up" into "tearful" — proofread pronouns and the Objective section. |
+| `bonsai` | ~6GB (16GB+ Mac) | Bonsai 2 27B, a ternary-weight model from PrismML. Slower — a few minutes a note on a 16GB Mac mini — and uses most of that Mac's memory while it runs. In testing it kept neutral pronouns every time and was much less prone than llama3.1:8b to inventing or escalating in-session reactions — though still proofread it. |
 
-The authoritative list is [`sc_model_catalog`](lib/commands.sh).
+**`soapcap model`** shows both with their live status and lets you pick
+one as the default for `session`/`note` (pulling `llama3.1:8b` via Ollama
+if needed). `--model` still overrides it per run. The authoritative list
+is [`sc_model_catalog`](lib/commands.sh).
 
-**`soapcap model`** shows this table live (with which models are actually
-pulled) and, interactively, lets you pick one — pulling it via `ollama pull`
-if needed, with an extra confirmation for anything untested — and saves
-the pick as the new default for `session`/`note` (`--model` still overrides
-per-run). `session` uses whatever is configured and doesn't ask.
+**Setting up Bonsai.** Bonsai's weights use a format only
+[PrismML's llama.cpp fork](https://github.com/PrismML-Eng/llama.cpp) can
+load — not Ollama, not stock llama.cpp. `install.sh` offers it, or run it
+any time:
+
+```sh
+tools/bonsai/install.sh    # builds the fork's llama-server (pinned, ~2 min),
+                           # downloads the model (~6GB, checksum-verified)
+                           # into ~/.local/share/soapcap/bonsai
+soapcap note --model bonsai transcript.txt
+```
+
+soapcap starts Bonsai's server on `127.0.0.1` only when drafting a note and
+stops it straight after, so its memory is free the rest of the time. Its
+location and port are configurable — see `config.example.sh`.
+
+**Bonsai only?** Bonsai doesn't use Ollama, so once it's your default you
+can reclaim llama3.1:8b's space — `note`, `session` and `doctor` are fine
+without it, and re-running `install.sh` won't offer it by default:
+
+```sh
+soapcap model                 # pick bonsai
+ollama rm llama3.1:8b         # frees ~5GB
+brew uninstall ollama         # optional, if nothing else uses it
+```
+
+**Other models.** Any other Ollama model works too, but outside the two
+above soapcap flags it as untested each time, and its notes need closer
+proofreading. Pull it, then name it:
+
+```sh
+ollama pull qwen2.5:14b
+soapcap note --model qwen2.5:14b transcript.txt
+```
+
+To make it stick, set `SOAPCAP_MODEL="qwen2.5:14b"` in
+`~/.config/soapcap/config.sh`.
+
+`qwen2.5:14b` is the one other model run through the same baseline (the
+[sample transcripts](samples/transcripts/) 03, 04, 07 and 08, three runs
+each in all three formats, at two temperatures). It's a reasonable middle
+ground if you want something more careful than the default without
+building Bonsai: about as fast as `llama3.1:8b` (median ~30s a note) but
+~9GB, and in BIRP/DAP notes it kept neutral pronouns every time. In SOAP
+notes, though, it assumed a pronoun from the client's name in 11 of 18
+runs (Bonsai: 0), and it tends to add color the transcript doesn't
+support — "visibly relaxed", "affect was…", "appeared emotional".
 
 Other flags: `--host URL`, `--clipboard`.
 
@@ -486,7 +538,7 @@ never produces (see [Retention](#retention)).
 ## Roadmap
 
 - [x] On-device capture + speaker-attributed transcript (`live`, `transcribe`)
-- [x] `soapcap note` — local SOAP/DAP/BIRP generation via Ollama
+- [x] `soapcap note` — local SOAP/DAP/BIRP generation via Ollama, or Bonsai via llama-server
 - [x] `soapcap session` + `soapcap.command` — guided flow, clickable launcher
 - [x] `doctor` checks chip/memory/disk and sizes model advice to them
 - [x] Single-key stop (q/x) and real pause/resume (p) while recording
@@ -548,6 +600,8 @@ matters.
 | Wrong language | `soapcap live --locale en-US` or set `SOAPCAP_LOCALE`. |
 | `note`: "can't reach Ollama" | `brew services start ollama` (or `ollama serve`), then re-run. |
 | `note`: "model is not pulled" | `ollama pull llama3.1:8b` (or whatever `--model` you passed). |
-| `note` is slow / machine feels sluggish | Close other apps, or use a smaller model (`--model llama3.2:3b`) — see [Requirements](#requirements) and [Draft a note](#draft-a-note). |
+| `note` is slow / machine feels sluggish | Close other apps. `bonsai` takes a few minutes a note by design; `--model llama3.1:8b` is much faster — see [Requirements](#requirements) and [Draft a note](#draft-a-note). |
+| `note --model bonsai`: "isn't set up" | Run `tools/bonsai/install.sh`, or point `SOAPCAP_BONSAI_SERVER`/`SOAPCAP_BONSAI_GGUF` at an existing setup (see `config.example.sh`). |
+| `note --model bonsai`: "already listening on port" | Something else is using port 18080. Stop it, or set `SOAPCAP_BONSAI_PORT` to a free port in `config.sh`. |
 | `note` with no FILE just sits there | No terminal / no fzf, so there's nothing to read or browse. Pass a file, pipe one in, or `brew install fzf`. |
 | Want Ollama to stop running | `ollama stop <model>` unloads just that model from memory (Ollama reloads it next time it's needed). To stop Ollama itself: `brew services stop ollama` if you started it that way, otherwise quit/kill the `ollama serve` process. |

@@ -22,6 +22,7 @@ unset _sc_src _sc_dir
 SC_WORKDIR=""
 SC_JSON=""
 SC_ALT_SCREEN=0
+SC_TMP_FILES=""
 
 # shellcheck source=lib/common.sh
 . "$SC_ROOT/lib/common.sh"
