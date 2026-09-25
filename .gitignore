@@ -1,6 +1,8 @@
 # Never commit captured PHI or working files.
 *.transcript
 *.transcript.txt
+# ...except the fictional sample corpus (see samples/transcripts/README.md).
+!samples/transcripts/*.transcript
 *.srt
 *.vtt
 *.json
