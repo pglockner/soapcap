@@ -3,7 +3,8 @@
 # Flow tests: run the real bin/soapcap end to end against fake `yap` and
 # `curl` (test/stubs/), so capture, stop-signal handling, note generation and
 # `session` are exercised without audio hardware or Ollama. Sourced by
-# test/run.sh, which provides $here, assert_eq and the pass/fail counters.
+# test/run.sh, which provides $here, the assert_* helpers and the pass/fail
+# counters.
 #
 # Each run is hermetic: `env -i`, a throwaway HOME (no developer config), a
 # throwaway TMPDIR, and a PATH holding only the stubs, jq, and /usr/bin:/bin
@@ -17,18 +18,6 @@ ln -s "$(command -v jq)" "$FLOW_BIN/jq"
 : > "$FLOW_DIR/bonsai.gguf"
 BONSAI_ENV=(SOAPCAP_BONSAI_SERVER="$FLOW_BIN/llama-server" SOAPCAP_BONSAI_GGUF="$FLOW_DIR/bonsai.gguf")
 
-assert_contains() {
-  local desc="$1" haystack="$2" needle="$3" r=no
-  case "$haystack" in *"$needle"*) r=yes ;; esac
-  assert_eq "$desc" yes "$r"
-}
-
-assert_not_contains() {
-  local desc="$1" haystack="$2" needle="$3" r=yes
-  case "$haystack" in *"$needle"*) r=no ;; esac
-  assert_eq "$desc" yes "$r"
-}
-
 # flow_run SIGNAL [VAR=VALUE ...] -- soapcap ARGS...
 # SIGNAL "none" waits for soapcap to finish on its own. Otherwise, once the
 # stub yap (or, with FLOW_READY=llama, the stub llama-server) is running,
@@ -41,7 +30,8 @@ flow_run() {
   while [ "$1" != "--" ]; do envs+=("$1"); shift; done
   shift
   : > "$FLOW_DIR/yap.log"; : > "$FLOW_DIR/curl.log"; : > "$FLOW_DIR/llama.log"; : > "$FLOW_DIR/curl.args"
-  rm -f "$FLOW_DIR/payload.json" "$FLOW_DIR/out" "$FLOW_DIR/err"
+  : > "$FLOW_DIR/payloads.jsonl"
+  rm -f "$FLOW_DIR/payload.json" "$FLOW_DIR/out" "$FLOW_DIR/err" "$FLOW_DIR/struct.count"
 
   # A job started with & from a non-interactive shell begins with SIGINT
   # ignored (so it couldn't trap it); a terminal's Ctrl-C isn't. perl resets
@@ -50,7 +40,8 @@ flow_run() {
   env -i PATH="$FLOW_BIN:/usr/bin:/bin" HOME="$FLOW_DIR/home" TMPDIR="$FLOW_DIR/tmp" \
     STUB_YAP_LOG="$FLOW_DIR/yap.log" STUB_CURL_LOG="$FLOW_DIR/curl.log" \
     STUB_CURL_PAYLOAD="$FLOW_DIR/payload.json" STUB_LLAMA_LOG="$FLOW_DIR/llama.log" \
-    STUB_CURL_ARGS="$FLOW_DIR/curl.args" \
+    STUB_CURL_ARGS="$FLOW_DIR/curl.args" STUB_CURL_PAYLOG="$FLOW_DIR/payloads.jsonl" \
+    STUB_STRUCT_COUNT="$FLOW_DIR/struct.count" \
     ${envs[@]+"${envs[@]}"} \
     /usr/bin/perl -e '$SIG{INT} = "DEFAULT"; exec @ARGV' "$here/bin/soapcap" "$@" \
     <"${FLOW_STDIN:-/dev/null}" >"$FLOW_DIR/out" 2>"$FLOW_DIR/err" &
@@ -211,6 +202,136 @@ assert_contains "note: an Ollama error message is surfaced" "$FLOW_ERR" "Ollama 
 
 flow_run none STUB_OLLAMA_MODE=empty -- note
 assert_contains "note: an empty response is reported" "$FLOW_ERR" "no content"
+
+# --- note --style --------------------------------------------------------
+
+yesno() { sed 's/true/yes/; s/false/no/'; }
+nreq() { grep -c "$1" "$FLOW_DIR/curl.log" | tr -d ' '; }   # requests to URL pattern
+soap_fields="subjective objective_observations assessment risk safety_plan interventions_used plan_items"
+
+flow_run none -- note
+assert_eq "style: the narrative request carries no schema" "no" \
+  "$(jq -r 'has("format") or has("response_format")' "$FLOW_DIR/payload.json" | yesno)"
+assert_eq "style: narrative is a single request" "1" "$(nreq /api/generate)"
+
+flow_run none -- note --style bogus
+assert_eq "style: an unknown style exits non-zero" "1" "$FLOW_RC"
+assert_contains "style: an unknown style is named" "$FLOW_ERR" "unknown style 'bogus'"
+assert_eq "style: an unknown style sends no request" "" "$(cat "$FLOW_DIR/curl.log")"
+
+flow_run none SOAPCAP_STYLE=bogus -- note
+assert_eq "style: an unknown SOAPCAP_STYLE exits non-zero" "1" "$FLOW_RC"
+
+flow_run none -- note --style structured
+assert_eq "structured: exits 0" "0" "$FLOW_RC"
+assert_contains "structured: Subjective comes from the JSON" "$FLOW_OUT" "SUBJECTIVE:
+Stub structured subjective."
+assert_contains "structured: observations become Objective" "$FLOW_OUT" "OBJECTIVE:
+Stub observation."
+assert_contains "structured: risk is added to Assessment" "$FLOW_OUT" \
+  "Stub structured assessment. Stub risk summary."
+assert_contains "structured: interventions open Plan" "$FLOW_OUT" \
+  "PLAN:
+In session, the therapist reviewed a stub exercise."
+assert_contains "structured: the safety plan is composed into Plan" "$FLOW_OUT" \
+  "The safety plan identified warning signs: a stub sign; and emergency steps: calling 988."
+assert_contains "structured: next steps are composed into Plan" "$FLOW_OUT" \
+  "The client agreed to do a stub task."
+assert_not_contains "structured: no JSON reaches the note" "$FLOW_OUT" "{"
+assert_contains "structured: the review goes to stderr" "$FLOW_ERR" "review: nothing flagged"
+assert_not_contains "structured: the review stays out of the note" "$FLOW_OUT" "nothing flagged"
+assert_eq "structured: sends Ollama a schema" "object" "$(jq -r .format.type "$FLOW_DIR/payload.json")"
+assert_eq "structured: the SOAP schema's fields, in note order" "$soap_fields" \
+  "$(jq -r '.format.required | join(" ")' "$FLOW_DIR/payload.json")"
+assert_eq "structured: tested sampling, and an output cap" "0.3 0.8 20 3000" \
+  "$(jq -r '.options | "\(.temperature) \(.top_p) \(.top_k) \(.num_predict)"' "$FLOW_DIR/payload.json")"
+assert_eq "structured: the context fits the prompt plus the output cap" "yes" \
+  "$(jq -r '.options.num_ctx - .options.num_predict >= (.prompt | split(" ") | length)' "$FLOW_DIR/payload.json" | yesno)"
+assert_eq "structured: the transcript goes with numbered lines" "yes" \
+  "$(jq -r '.prompt | contains("TRANSCRIPT:\n1 | Therapist: hi\n2 | Client: hello")' "$FLOW_DIR/payload.json" | yesno)"
+assert_eq "structured: the prompt names the format" "yes" \
+  "$(jq -r '.prompt | split("\n")[0] | endswith("drafting a clinical SOAP")' "$FLOW_DIR/payload.json" | yesno)"
+
+flow_run none -- note --style structured --format dap
+assert_contains "structured dap: Data holds reported content and observations" "$FLOW_OUT" \
+  "DATA:
+Stub structured subjective. Stub observation."
+assert_eq "structured dap: the prompt names the format" "yes" \
+  "$(jq -r '.prompt | split("\n")[0] | endswith("drafting a clinical DAP")' "$FLOW_DIR/payload.json" | yesno)"
+
+flow_run none -- note --style structured --format birp
+assert_contains "structured birp: interventions get their own section" "$FLOW_OUT" \
+  "INTERVENTION:
+In session, the therapist reviewed a stub exercise."
+assert_contains "structured birp: risk is added to Response" "$FLOW_OUT" \
+  "RESPONSE:
+Stub structured response. Stub risk summary."
+assert_eq "structured birp: the BIRP schema's fields, in note order" \
+  "subjective objective_observations interventions_used response risk safety_plan plan_items" \
+  "$(jq -r '.format.required | join(" ")' "$FLOW_DIR/payload.json")"
+
+flow_run none STUB_STRUCT_MODE=invalid_once -- note --style structured
+assert_eq "structured: one malformed response is retried" "0" "$FLOW_RC"
+assert_contains "structured: the retry is announced" "$FLOW_ERR" "retrying once"
+assert_eq "structured: the retry is a second request" "2" "$(nreq /api/generate)"
+
+flow_run none STUB_STRUCT_MODE=invalid -- note --style structured
+assert_eq "structured: two malformed responses fail" "1" "$FLOW_RC"
+assert_contains "structured: says why it failed" "$FLOW_ERR" "incomplete twice"
+assert_eq "structured: never more than two attempts" "2" "$(nreq /api/generate)"
+
+flow_run none STUB_STRUCT_MODE=length -- note --style structured
+assert_eq "structured: a response cut off at the cap is not accepted" "1" "$FLOW_RC"
+
+flow_run none "${BONSAI_ENV[@]}" STUB_OLLAMA_MODE=down -- note --model bonsai --style structured
+assert_eq "structured bonsai: exits 0" "0" "$FLOW_RC"
+assert_contains "structured bonsai: renders the note" "$FLOW_OUT" "Stub structured subjective."
+assert_eq "structured bonsai: sends a JSON schema" "json_schema" \
+  "$(jq -r .response_format.type "$FLOW_DIR/payload.json")"
+assert_eq "structured bonsai: tested sampling, and an output cap" "0.3 0.8 20 3000" \
+  "$(jq -r '"\(.temperature) \(.top_p) \(.top_k) \(.max_tokens)"' "$FLOW_DIR/payload.json")"
+assert_eq "structured bonsai: thinking is turned off" "false" \
+  "$(jq -r .chat_template_kwargs.enable_thinking "$FLOW_DIR/payload.json")"
+assert_eq "structured bonsai: server is stopped after the note" "stopped" "$(tail -n 1 "$FLOW_DIR/llama.log")"
+assert_eq "structured bonsai: no server left running" "0" "$FLOW_LLAMA_LEFT"
+
+flow_run none -- note --style combined
+assert_eq "combined: exits 0" "0" "$FLOW_RC"
+assert_contains "combined: prints the narrative note" "$FLOW_OUT" "Stub note"
+assert_not_contains "combined: the structured draft isn't the note" "$FLOW_OUT" "Stub structured"
+assert_eq "combined: two requests" "2" "$(wc -l < "$FLOW_DIR/payloads.jsonl" | tr -d ' ')"
+assert_eq "combined: the first is the narrative request, the second the check" "no yes" \
+  "$(jq -r 'has("format")' "$FLOW_DIR/payloads.jsonl" | yesno | tr '\n' ' ' | sed 's/ $//')"
+assert_contains "combined: shows a review" "$FLOW_ERR" "review before submitting"
+assert_contains "combined: flags an Objective that missed a reaction" "$FLOW_ERR" \
+  "Objective says there were no observable reactions, but the transcript has one at line 1 (Therapist)"
+assert_contains "combined: flags undocumented risk" "$FLOW_ERR" \
+  "A safety risk came up in the session, but the note doesn't mention it"
+assert_contains "combined: lists next steps with their lines" "$FLOW_ERR" "line 2: do a stub task"
+assert_not_contains "combined: the review stays out of the note" "$FLOW_OUT" "review before submitting"
+
+flow_run none -- note --style combined --out "$FLOW_DIR/note.out"
+assert_not_contains "combined: the review stays out of --out" "$(cat "$FLOW_DIR/note.out")" "review before submitting"
+rm -f "$FLOW_DIR/note.out"
+
+flow_run none STUB_STRUCT_MODE=invalid -- note --style combined
+assert_eq "combined: a failed review pass still delivers the note" "0" "$FLOW_RC"
+assert_contains "combined: ...with the note intact" "$FLOW_OUT" "Stub note"
+assert_contains "combined: ...and says it wasn't checked" "$FLOW_ERR" "review pass failed"
+
+flow_run none "${BONSAI_ENV[@]}" STUB_OLLAMA_MODE=down -- note --model bonsai --style combined
+assert_eq "combined bonsai: exits 0" "0" "$FLOW_RC"
+assert_contains "combined bonsai: prints the narrative note" "$FLOW_OUT" "Bonsai stub note"
+assert_eq "combined bonsai: one server start for both passes" "1" "$(grep -c '^started' "$FLOW_DIR/llama.log" | tr -d ' ')"
+assert_eq "combined bonsai: two requests to it" "2" "$(nreq /v1/chat/completions)"
+assert_eq "combined bonsai: the narrative pass keeps its tested settings" "0.7 2000 false" \
+  "$(head -1 "$FLOW_DIR/payloads.jsonl" | jq -r '"\(.temperature) \(.max_tokens) \(has("response_format"))"')"
+assert_eq "combined bonsai: server is stopped after both passes" "stopped" "$(tail -n 1 "$FLOW_DIR/llama.log")"
+assert_eq "combined bonsai: no server left running" "0" "$FLOW_LLAMA_LEFT"
+
+flow_run none -- session --style bogus --format soap
+assert_eq "session: an unknown style exits non-zero" "1" "$FLOW_RC"
+assert_eq "session: an unknown style is caught before capture starts" "" "$(cat "$FLOW_DIR/yap.log")"
 
 : > "$FLOW_STDIN"
 flow_run none -- note

@@ -1,0 +1,58 @@
+{
+  "subjective": { "type": "string" },
+  "objective_observations": {
+    "type": "array",
+    "items": {
+      "type": "object",
+      "properties": {
+        "line": { "type": "integer" },
+        "speaker": { "type": "string" },
+        "text": { "type": "string" }
+      },
+      "required": ["line", "speaker", "text"]
+    }
+  },
+  "assessment": { "type": "string" },
+  "response": { "type": "string" },
+  "risk": {
+    "type": "object",
+    "properties": {
+      "status": { "type": "string", "enum": ["disclosed", "screened_negative", "not_addressed"] },
+      "summary": { "type": "string" }
+    },
+    "required": ["status", "summary"]
+  },
+  "safety_plan": {
+    "type": "object",
+    "properties": {
+      "warning_signs": { "type": "array", "items": { "type": "string" } },
+      "coping_strategies": { "type": "array", "items": { "type": "string" } },
+      "supports": { "type": "array", "items": { "type": "string" } },
+      "emergency_steps": { "type": "array", "items": { "type": "string" } }
+    },
+    "required": ["warning_signs", "coping_strategies", "supports", "emergency_steps"]
+  },
+  "interventions_used": {
+    "type": "array",
+    "items": {
+      "type": "object",
+      "properties": {
+        "line": { "type": "integer" },
+        "action": { "type": "string" }
+      },
+      "required": ["line", "action"]
+    }
+  },
+  "plan_items": {
+    "type": "array",
+    "items": {
+      "type": "object",
+      "properties": {
+        "line": { "type": "integer" },
+        "actor": { "type": "string", "enum": ["client", "therapist", "both"] },
+        "action": { "type": "string" }
+      },
+      "required": ["line", "actor", "action"]
+    }
+  }
+}

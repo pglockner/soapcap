@@ -7,6 +7,8 @@
 *.vtt
 *.json
 *.jsonl
+# ...except the structured note style's schema (see prompts/structured/).
+!prompts/structured/*.json
 *.m4a
 *.wav
 *.aiff

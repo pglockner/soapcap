@@ -264,6 +264,40 @@ soapcap note --model qwen2.5:14b transcript.txt
 To make it stick, set `SOAPCAP_MODEL="qwen2.5:14b"` in
 `~/.config/soapcap/config.sh`.
 
+**Note style** — `--style`, or `SOAPCAP_STYLE` in config. `structured` and
+`combined` are experimental.
+
+| Style | What happens | Trade-off |
+|---|---|---|
+| `narrative` | **Default.** The model writes the note as prose from `prompts/<format>.md`. | Fullest Subjective and the most natural wording. Format rules depend on the model following the prompt. |
+| `structured` | The model fills in a fixed set of fields — each Objective observation and next step cites the transcript line it comes from — and soapcap checks them and writes the note itself. | Headers, the Objective rule and "Not addressed" are guaranteed by code rather than the model. Plan lists every commitment, and a disclosed risk's safety plan (warning signs, coping strategies, supports, emergency steps) in full. Cited lines, who-said-what, and quotes are checked against the transcript. But Subjective comes out briefer than narrative's, and Plan reads as composed sentences rather than free prose. |
+| `combined` | A narrative note, plus a structured pass used only to check it. | The narrative note, unchanged, plus a review: quotes that aren't in the transcript, an Objective saying "none" when the transcript has an in-the-moment reaction (or the reverse), a safety risk or safety screen the note doesn't mention, and a checklist of the next steps mentioned in the session. **Roughly twice as long to draft** — two model passes (an hour-long session with Bonsai on a 16GB Mac mini: ~5 min narrative, ~11 min combined). |
+
+What `structured` has been tested on so far: mainly Bonsai with SOAP (the
+[sample transcripts](samples/transcripts/) 04 and 08, several runs each),
+where it listed every commitment and the full safety plan every time, and
+one Bonsai BIRP run, where Intervention came out as a long list — Bonsai
+counted every question the therapist asked as an intervention. With
+`llama3.1:8b`, structured DAP/BIRP notes copied transcript lines word for
+word into Data/Behavior; the review flags it, but the copied text stays in
+the note, so read those closely or use `narrative` with that model.
+
+Reviews print to the terminal only (stderr) — never into the note, `--out`,
+or the clipboard. The window app doesn't show them yet, so `combined`
+there costs the extra time with nothing to show for it; use `narrative`
+or `structured` with the app for now.
+
+The next-steps checklist is just that — every next step the check found,
+with the transcript line it came from. It doesn't try to say which ones
+the note is missing: word matching was tried, and it was wrong more often
+than right.
+
+Structured style's content rules live in
+[`prompts/structured/rules.md`](prompts/structured/rules.md), a copy of the
+rules the three narrative prompts share; `test/run.sh` fails if the copies
+drift apart. Its field guide and schema are alongside it, and the checks
+and rendering are jq in [`lib/structured/`](lib/structured/).
+
 `qwen2.5:14b` is the one other model run through the same baseline (the
 [sample transcripts](samples/transcripts/) 03, 04, 07 and 08, three runs
 each in all three formats, at two temperatures). It's a reasonable middle
@@ -274,7 +308,7 @@ notes, though, it assumed a pronoun from the client's name in 11 of 18
 runs (Bonsai: 0), and it tends to add color the transcript doesn't
 support — "visibly relaxed", "affect was…", "appeared emotional".
 
-Other flags: `--host URL`, `--clipboard`.
+Other flags: `--style STYLE`, `--host URL`, `--clipboard`.
 
 ### De-identify
 
@@ -550,6 +584,13 @@ never produces (see [Retention](#retention)).
 - [ ] `soapcap record` — the one path that *must* keep audio briefly, for
       Upheal (audio-only intake); capture to a temp `.m4a`, upload, delete
 - [x] Experimental native window front end for `session` (`tools/session-app`)
+- [x] Note styles — `narrative`, `structured`, `combined` (`--style`)
+- [ ] Show `structured`/`combined` reviews in the window app
+- [ ] Pause and speech-rate markers — yap's per-segment timestamps could
+      mark long pauses, or speech noticeably faster/slower than a speaker's
+      own baseline, as neutral in-session observations for Objective.
+      Waiting on evidence that a small local model uses them well rather
+      than over-reading them.
 
 ---
 

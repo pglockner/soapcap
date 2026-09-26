@@ -113,6 +113,13 @@ sc_cmd_doctor() {
     sc_info "        set up with: $SC_ROOT/tools/bonsai/install.sh"
   fi
 
+  case "$SOAPCAP_STYLE" in
+    narrative) sc_info "  ok    note style: narrative (the default)" ;;
+    structured|combined)
+      sc_info "  ok    note style: $SOAPCAP_STYLE (experimental — see README \"Note style\")" ;;
+    *) sc_info "  WARN  SOAPCAP_STYLE='$SOAPCAP_STYLE' isn't a style — use narrative, structured, or combined" ;;
+  esac
+
   if command -v gum >/dev/null 2>&1; then
     sc_info "  ok    gum present — 'session' prompts use it for arrow-key choose/confirm"
   else
@@ -532,13 +539,16 @@ sc_spin_post() {
   return "$rc"
 }
 
-# sc_ollama_generate MODEL HOST PROMPT FORMAT — sets SC_RAW_NOTE. Talks to
-# Ollama's HTTP API directly rather than shelling out to `ollama run`: the
-# CLI renders a spinner/progress UI even when its stdout isn't a terminal,
-# which corrupts captured output.
+# sc_ollama_generate MODEL HOST PROMPT TITLE [HEADROOM] [EXTRA] — sets
+# SC_RAW_NOTE and SC_RAW_DONE (Ollama's done_reason). Talks to Ollama's
+# HTTP API directly rather than shelling out to `ollama run`: the CLI
+# renders a spinner/progress UI even when its stdout isn't a terminal,
+# which corrupts captured output. EXTRA is a JSON object deep-merged into
+# the request (the structured style's schema and sampling settings);
+# without it the request is exactly what the narrative style always sent.
 sc_ollama_generate() {
-  SC_RAW_NOTE=""
-  local model="$1" host="$2" prompt="$3" format="$4"
+  SC_RAW_NOTE=""; SC_RAW_DONE=""
+  local model="$1" host="$2" prompt="$3" title="$4" headroom="${5:-1024}" extra="${6:-}"
 
   local tags
   if ! tags=$(curl -s --max-time 5 "$host/api/tags"); then
@@ -553,13 +563,15 @@ sc_ollama_generate() {
 
   # Ollama's own default context (historically 2048) is far too small.
   local ctx payload resp_file rc response
-  ctx=$(sc_estimate_ctx "$prompt" 1024 4096)
+  ctx=$(sc_estimate_ctx "$prompt" "$headroom" 4096)
   payload=$(jq -n --arg model "$model" --arg prompt "$prompt" --argjson num_ctx "$ctx" \
     '{model: $model, prompt: $prompt, stream: false, options: {num_ctx: $num_ctx}}')
+  if [ -n "$extra" ]; then
+    payload=$(printf '%s' "$payload" | jq --argjson x "$extra" '. * $x')
+  fi
 
   sc_tmpfile resp_file || return 1
-  sc_spin_post "Drafting a $format note with ${model}…" "$host/api/generate" \
-    "$payload" "$resp_file" 300
+  sc_spin_post "$title" "$host/api/generate" "$payload" "$resp_file" 300
   rc=$?
   response=$(cat "$resp_file"); rm -f "$resp_file"
   # A mid-response --max-time timeout (curl exit 28) leaves a non-empty but
@@ -574,6 +586,7 @@ sc_ollama_generate() {
     return 1
   fi
   SC_RAW_NOTE=$(printf '%s' "$response" | jq -r '.response // empty')
+  SC_RAW_DONE=$(printf '%s' "$response" | jq -r '.done_reason // empty')
   [ -n "$SC_RAW_NOTE" ] || { sc_err "Ollama returned no content"; return 1; }
 }
 
@@ -623,27 +636,22 @@ sc_bonsai_start() {
   return 1
 }
 
-# sc_bonsai_generate PROMPT FORMAT — sets SC_RAW_NOTE. Starts the server,
-# drafts one note, and stops the server straight away, so its ~6GB is free
-# again before anything else (e.g. de-identify) runs. Sampling matches the
-# settings soapcap's prompts were tested with.
-sc_bonsai_generate() {
-  SC_RAW_NOTE=""
-  local prompt="$1" format="$2" ctx payload resp_file rc response
-  # 2048 of headroom: the request allows up to 2000 output tokens.
-  ctx=$(sc_estimate_ctx "$prompt" 2048 8192)
-  sc_bonsai_start "$ctx" || return 1
-
-  payload=$(jq -n --arg p "$prompt" '{
-    messages: [{role: "user", content: $p}],
-    temperature: 0.7, top_p: 0.8, top_k: 20, max_tokens: 2000, stream: false,
+# sc_bonsai_request PROMPT TITLE SETTINGS — sets SC_RAW_NOTE and SC_RAW_DONE
+# (the finish_reason). Sends one chat request to the already-running server
+# (sc_bonsai_start); SETTINGS is a JSON object of sampling/output settings
+# merged into it. Thinking is always off: with it on, a note takes many
+# minutes longer and the prompts were tested without it.
+sc_bonsai_request() {
+  SC_RAW_NOTE=""; SC_RAW_DONE=""
+  local prompt="$1" title="$2" settings="$3" payload resp_file rc response
+  payload=$(jq -n --arg p "$prompt" --argjson s "$settings" '{
+    messages: [{role: "user", content: $p}], stream: false,
     chat_template_kwargs: {enable_thinking: false}
-  }')
-  sc_tmpfile resp_file || { sc_bonsai_stop; return 1; }
-  sc_spin_post "Drafting a $format note with Bonsai (this takes a few minutes)…" \
-    "http://127.0.0.1:$SOAPCAP_BONSAI_PORT/v1/chat/completions" "$payload" "$resp_file" 900
+  } + $s')
+  sc_tmpfile resp_file || return 1
+  sc_spin_post "$title" "http://127.0.0.1:$SOAPCAP_BONSAI_PORT/v1/chat/completions" \
+    "$payload" "$resp_file" 900
   rc=$?
-  sc_bonsai_stop
   response=$(cat "$resp_file"); rm -f "$resp_file"
 
   if [ "$rc" -ne 0 ] || [ -z "$response" ]; then
@@ -654,68 +662,259 @@ sc_bonsai_generate() {
     return 1
   fi
   SC_RAW_NOTE=$(printf '%s' "$response" | jq -r '.choices[0].message.content // empty')
+  SC_RAW_DONE=$(printf '%s' "$response" | jq -r '.choices[0].finish_reason // empty')
   [ -n "$SC_RAW_NOTE" ] || { sc_err "Bonsai returned no content"; return 1; }
-  if [ "$(printf '%s' "$response" | jq -r '.choices[0].finish_reason // empty')" = length ]; then
+}
+
+# The narrative style's Bonsai settings -- the ones soapcap's prompts were
+# tested with. 2048 of context headroom covers the 2000-token output cap.
+SC_BONSAI_NARRATIVE='{"temperature": 0.7, "top_p": 0.8, "top_k": 20, "max_tokens": 2000}'
+
+# sc_bonsai_narrative PROMPT FORMAT — drafts a narrative note on the
+# already-running server; sets SC_RAW_NOTE.
+sc_bonsai_narrative() {
+  sc_bonsai_request "$1" "Drafting a $2 note with Bonsai (this takes a few minutes)…" \
+    "$SC_BONSAI_NARRATIVE" || return 1
+  if [ "$SC_RAW_DONE" = length ]; then
     sc_err "warning: Bonsai hit its output limit — the end of the note may be cut off"
   fi
   return 0
 }
 
-# sc_generate_note <format> <model> <host> <transcript>
+# sc_bonsai_generate PROMPT FORMAT — sets SC_RAW_NOTE. Starts the server,
+# drafts one narrative note, and stops the server straight away, so its
+# ~6GB is free again before anything else (e.g. de-identify) runs.
+sc_bonsai_generate() {
+  SC_RAW_NOTE=""
+  local rc
+  sc_bonsai_start "$(sc_estimate_ctx "$1" 2048 8192)" || return 1
+  sc_bonsai_narrative "$1" "$2"
+  rc=$?
+  sc_bonsai_stop
+  return "$rc"
+}
+
+# ---------------------------------------------------------------------------
+# Note styles (SOAPCAP_STYLE / --style):
+#   narrative   the model writes the note as prose (prompts/<format>.md)
+#   structured  the model returns JSON matching a schema; code checks it
+#               against the transcript and writes the note
+#               (prompts/structured/, lib/structured/)
+#   combined    a narrative note, plus a structured pass used only to
+#               review it -- roughly twice the drafting time
+
+# sc_check_style STYLE — returns 1, with an error, unless STYLE is valid.
+sc_check_style() {
+  case "$1" in
+    narrative|structured|combined) return 0 ;;
+    *) sc_err "unknown style '$1' — use narrative, structured, or combined"; return 1 ;;
+  esac
+}
+
+# sc_structured_fields FORMAT — the schema fields for FORMAT, in the order
+# the model writes them (which is also note order).
+sc_structured_fields() {
+  case "$1" in
+    soap|dap) echo "subjective objective_observations assessment risk safety_plan interventions_used plan_items" ;;
+    birp)     echo "subjective objective_observations interventions_used response risk safety_plan plan_items" ;;
+    *) return 1 ;;
+  esac
+}
+
+# sc_structured_prompt FORMAT TRANSCRIPT — prints the structured prompt: the
+# shared content rules, the field guide for FORMAT's fields, and the
+# transcript with numbered lines (the model cites them; validation checks
+# them against this same transcript).
+sc_structured_prompt() {
+  local format="$1" transcript="$2" dir="$SC_ROOT/prompts/structured" f
+  local upper; upper=$(printf '%s' "$format" | tr '[:lower:]' '[:upper:]')
+  sed "1s/clinical SOAP\$/clinical $upper/" "$dir/rules.md"
+  echo
+  for f in _intro $(sc_structured_fields "$format") _phrases _closing; do
+    awk -v s="$f" '/^## /{p=($2 == s); next} p' "$dir/fields.md"
+  done
+  printf '\nTRANSCRIPT:\n'
+  printf '%s\n' "$transcript" | awk '{printf "%d | %s\n", NR, $0}'
+}
+
+# sc_structured_schema FORMAT — prints the JSON schema for FORMAT.
+sc_structured_schema() {
+  local fields
+  fields=$(sc_structured_fields "$1" | jq -Rc 'split(" ")')
+  jq -c --argjson fields "$fields" \
+    '. as $all | {type: "object",
+       properties: (reduce $fields[] as $f ({}; .[$f] = $all[$f])),
+       required: $fields}' "$SC_ROOT/prompts/structured/schema.json"
+}
+
+# sc_structured_request MODEL HOST FORMAT PROMPT TITLE — sets SC_STRUCT_JSON.
+# Bonsai's server must already be running. The schema is enforced by the
+# server, but a response can still be cut off (output cap) or come back
+# malformed, so one invalid response is retried once before giving up. The
+# output cap matters: without one, a model can loop inside the JSON until
+# the request times out.
+sc_structured_request() {
+  SC_STRUCT_JSON=""
+  local model="$1" host="$2" format="$3" prompt="$4" title="$5" schema attempt
+  schema=$(sc_structured_schema "$format") || { sc_err "no structured schema for '$format'"; return 1; }
+  for attempt in 1 2; do
+    if [ "$model" = bonsai ]; then
+      sc_bonsai_request "$prompt" "$title" "$(jq -nc --argjson s "$schema" '{
+        temperature: 0.3, top_p: 0.8, top_k: 20, max_tokens: 3000,
+        response_format: {type: "json_schema", json_schema: {schema: $s}}}')" || return 1
+    else
+      sc_ollama_generate "$model" "$host" "$prompt" "$title" 3072 "$(jq -nc --argjson s "$schema" '{
+        format: $s, options: {temperature: 0.3, top_p: 0.8, top_k: 20, num_predict: 3000}}')" || return 1
+    fi
+    if [ "$SC_RAW_DONE" = stop ] && printf '%s' "$SC_RAW_NOTE" \
+         | jq -e --argjson s "$schema" '. as $o | type == "object" and ($s.required | all(. as $k | $o | has($k)))' >/dev/null 2>&1; then
+      SC_STRUCT_JSON="$SC_RAW_NOTE"
+      return 0
+    fi
+    [ "$attempt" = 1 ] && sc_info "The structured draft came back incomplete — retrying once…"
+  done
+  sc_err "the structured draft came back incomplete twice (cut off or malformed)"
+  return 1
+}
+
+# sc_review_block TITLE LINES — frames review lines for display on stderr.
+sc_review_block() {
+  printf '%s\n' "----- $1 -----" "$2" "-----------------------------"
+}
+
+# sc_generate_note <format> <model> <host> <transcript> [style]
 #
 # Drafts a note from a transcript with a local model: `bonsai` via
-# llama-server, anything else via Ollama. On success sets SC_NOTE and
-# returns 0; on failure prints an actionable error via sc_err and returns
-# 1 — it does NOT exit, so a caller holding an already-captured transcript
-# (sc_cmd_session) can report the failure without losing it. sc_cmd_note,
-# which has nothing else at stake, turns that failure straight into sc_die.
+# llama-server, anything else via Ollama. On success sets SC_NOTE (the note)
+# and SC_REVIEW (review text for the clinician, possibly empty -- shown on
+# stderr, never part of the note) and returns 0; on failure prints an
+# actionable error via sc_err and returns 1 — it does NOT exit, so a caller
+# holding an already-captured transcript (sc_cmd_session) can report the
+# failure without losing it. sc_cmd_note, which has nothing else at stake,
+# turns that failure straight into sc_die.
 sc_generate_note() {
-  SC_NOTE=""
-  local format="$1" model="$2" host="$3" transcript="$4"
+  SC_NOTE=""; SC_REVIEW=""
+  local format="$1" model="$2" host="$3" transcript="$4" style="${5:-narrative}"
+  sc_check_style "$style" || return 1
 
   local prompt_file="$SC_ROOT/prompts/$format.md"
   if [ ! -f "$prompt_file" ]; then
     sc_err "unknown format '$format' (no $prompt_file)"; return 1
   fi
 
-  local full_prompt note
-  full_prompt="$(cat "$prompt_file")
-
-TRANSCRIPT:
-$transcript"
-
   if ! sc_model_catalog | cut -d'|' -f1 | grep -qx "$model"; then
     sc_info "note: $model hasn't been tested with soapcap's prompts — proofread it with extra care."
   fi
 
-  case "$model" in
-    bonsai) sc_bonsai_generate "$full_prompt" "$format" || return 1 ;;
-    *)      sc_ollama_generate "$model" "$host" "$full_prompt" "$format" || return 1 ;;
-  esac
-  note="$SC_RAW_NOTE"
+  local full_prompt="" sprompt="" rc=0 note
+  if [ "$style" != structured ]; then
+    full_prompt="$(cat "$prompt_file")
 
-  # Three safety nets against known model misbehavior — see each
+TRANSCRIPT:
+$transcript"
+  fi
+  if [ "$style" != narrative ]; then
+    sprompt=$(sc_structured_prompt "$format" "$transcript")
+  fi
+
+  case "$style:$model" in
+    narrative:bonsai) sc_bonsai_generate "$full_prompt" "$format" || return 1 ;;
+    narrative:*)      sc_ollama_generate "$model" "$host" "$full_prompt" \
+                        "Drafting a $format note with ${model}…" || return 1 ;;
+    structured:bonsai)
+      # 3072 of headroom covers the structured request's 3000-token output cap.
+      sc_bonsai_start "$(sc_estimate_ctx "$sprompt" 3072 8192)" || return 1
+      sc_structured_request bonsai "" "$format" "$sprompt" \
+        "Drafting a structured $format note with Bonsai (this takes a few minutes)…"
+      rc=$?; sc_bonsai_stop; [ "$rc" -eq 0 ] || return 1 ;;
+    structured:*)
+      sc_structured_request "$model" "$host" "$format" "$sprompt" \
+        "Drafting a structured $format note with ${model}…" || return 1 ;;
+    combined:bonsai)
+      # One server start for both passes, sized for the larger request.
+      local c1 c2
+      c1=$(sc_estimate_ctx "$full_prompt" 2048 8192); c2=$(sc_estimate_ctx "$sprompt" 3072 8192)
+      sc_bonsai_start "$(( c1 > c2 ? c1 : c2 ))" || return 1
+      sc_bonsai_narrative "$full_prompt" "$format" || { sc_bonsai_stop; return 1; }
+      note="$SC_RAW_NOTE"
+      sc_structured_request bonsai "" "$format" "$sprompt" \
+        "Checking the note against the transcript with Bonsai…"
+      rc=$?; sc_bonsai_stop; SC_RAW_NOTE="$note" ;;
+    combined:*)
+      sc_ollama_generate "$model" "$host" "$full_prompt" \
+        "Drafting a $format note with ${model}…" || return 1
+      note="$SC_RAW_NOTE"
+      sc_structured_request "$model" "$host" "$format" "$sprompt" \
+        "Checking the note against the transcript with ${model}…"
+      rc=$?; SC_RAW_NOTE="$note" ;;
+  esac
+
+  local tfile nfile lines
+  if [ "$style" = structured ]; then
+    SC_NOTE=$(printf '%s' "$SC_STRUCT_JSON" | jq -r -L "$SC_ROOT/lib/structured" \
+      --arg format "$format" -f "$SC_ROOT/lib/structured/render.jq") || return 1
+    sc_tmpfile tfile || return 1
+    printf '%s\n' "$transcript" > "$tfile"
+    lines=$(printf '%s' "$SC_STRUCT_JSON" | jq -r -L "$SC_ROOT/lib/structured" \
+      --rawfile transcript "$tfile" --arg format "$format" -f "$SC_ROOT/lib/structured/validate.jq" \
+      | jq -r '.[] | "  • " + .')
+    rm -f "$tfile"
+    if [ -n "$lines" ]; then SC_REVIEW=$(sc_review_block "review before submitting" "$lines")
+    else SC_REVIEW="review: nothing flagged"; fi
+    [ -n "$SC_NOTE" ]
+    return
+  fi
+
+  # Three safety nets against known model misbehavior in prose — see each
   # function's own comment for the specific failure it guards against.
+  note="$SC_RAW_NOTE"
   note=$(printf '%s\n' "$note" | sc_strip_transcript_echo)
   note=$(printf '%s\n' "$note" | sc_strip_contaminated_fallback)
   SC_NOTE=$(printf '%s\n' "$note" | sc_strip_trailing_disclaimer)
-  [ -n "$SC_NOTE" ]
+  [ -n "$SC_NOTE" ] || return 1
+
+  if [ "$style" = combined ]; then
+    if [ "$rc" -ne 0 ]; then
+      # The review pass is a check, not the note: never lose the note over it.
+      SC_REVIEW="warning: the review pass failed, so this note hasn't been checked against the transcript"
+      return 0
+    fi
+    sc_tmpfile tfile || return 0
+    sc_tmpfile nfile || return 0
+    printf '%s\n' "$transcript" > "$tfile"
+    printf '%s\n' "$SC_NOTE" > "$nfile"
+    lines=$(printf '%s' "$SC_STRUCT_JSON" | jq -r -L "$SC_ROOT/lib/structured" \
+      --rawfile transcript "$tfile" --rawfile note "$nfile" --arg format "$format" \
+      -f "$SC_ROOT/lib/structured/review.jq" | jq -r '
+        (.flags[] | "  • " + .),
+        (if (.steps | length) > 0 then
+           "  Next steps mentioned in the session — confirm each is in the note:",
+           (.steps[] | "    line \(.line): \(.action)")
+         else empty end)')
+    rm -f "$tfile" "$nfile"
+    if [ -n "$lines" ]; then SC_REVIEW=$(sc_review_block "review before submitting" "$lines")
+    else SC_REVIEW="review: nothing flagged"; fi
+  fi
+  return 0
 }
 
 # ---------------------------------------------------------------------------
-# soapcap note [FILE] [--model NAME] [--format soap|dap|birp] [--host URL]
+# soapcap note [FILE] [--model NAME] [--format soap|dap|birp]
+#              [--style narrative|structured|combined] [--host URL]
 #              [--out FILE] [--clipboard]
 #
 # Reads a transcript (FILE, or stdin so it composes with `live`/`transcribe`)
-# and drafts a note via sc_generate_note().
+# and drafts a note via sc_generate_note(). Any review text goes to stderr,
+# never into the note, --out, or the clipboard.
 sc_cmd_note() {
   local file="" out="" model="$SOAPCAP_MODEL" format="$SOAPCAP_FORMAT" host="$SOAPCAP_OLLAMA_HOST"
-  local clipboard=0
+  local style="$SOAPCAP_STYLE" clipboard=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --out)       out="${2:?--out needs a path}"; shift 2 ;;
       --model)     model="${2:?}"; shift 2 ;;
       --format)    format="${2:?}"; shift 2 ;;
+      --style)     style="${2:?}"; shift 2 ;;
       --host)      host="${2:?}"; shift 2 ;;
       --clipboard) clipboard=1; shift ;;
       -h|--help)   sc_usage; return 0 ;;
@@ -724,6 +923,7 @@ sc_cmd_note() {
     esac
   done
 
+  sc_check_style "$style" || exit 1
   sc_need curl; sc_need jq
 
   local transcript
@@ -745,7 +945,7 @@ sc_cmd_note() {
   fi
   [ -n "$transcript" ] || sc_die "note: empty transcript (pass a file, or pipe one in via stdin)"
 
-  sc_generate_note "$format" "$model" "$host" "$transcript" || sc_die "note generation failed"
+  sc_generate_note "$format" "$model" "$host" "$transcript" "$style" || sc_die "note generation failed"
   local note="$SC_NOTE"
 
   if [ -n "$out" ]; then
@@ -755,6 +955,7 @@ sc_cmd_note() {
   else
     printf '%s\n' "$note"
   fi
+  [ -n "$SC_REVIEW" ] && sc_info "$SC_REVIEW"
   [ "$clipboard" -eq 1 ] && sc_to_clipboard "$note"
   return 0
 }
@@ -897,6 +1098,7 @@ sc_cmd_deidentify() {
 
 # ---------------------------------------------------------------------------
 # soapcap session [--format soap|dap|birp] [--model NAME] [--no-note]
+#                 [--style narrative|structured|combined]
 #                 [--clipboard] [--mic-label ...] [--system-label ...]
 #                 [--locale ...] [--no-dedupe]
 #
@@ -910,7 +1112,7 @@ sc_cmd_deidentify() {
 sc_cmd_session() {
   local mic="$SOAPCAP_MIC_LABEL" sys="$SOAPCAP_SYSTEM_LABEL" locale="$SOAPCAP_LOCALE"
   local dedupe=1 format="" model="$SOAPCAP_MODEL" host="$SOAPCAP_OLLAMA_HOST"
-  local no_note=0 clipboard=0
+  local style="$SOAPCAP_STYLE" no_note=0 clipboard=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --mic-label)    mic="${2:?}"; shift 2 ;;
@@ -918,6 +1120,7 @@ sc_cmd_session() {
       --locale)       locale="${2:?}"; shift 2 ;;
       --no-dedupe)    dedupe=0; shift ;;
       --format)       format="${2:?}"; shift 2 ;;
+      --style)        style="${2:?}"; shift 2 ;;
       --model)        model="${2:?}"; shift 2 ;;
       --host)         host="${2:?}"; shift 2 ;;
       --no-note)      no_note=1; shift ;;
@@ -926,6 +1129,8 @@ sc_cmd_session() {
       *) sc_die "session: unknown option: $1" ;;
     esac
   done
+  # Checked before capture starts, not after an hour-long session.
+  sc_check_style "$style" || exit 1
 
   sc_need yap; sc_need jq
 
@@ -1018,7 +1223,7 @@ sc_cmd_session() {
     local keep_note=0 note_choice
     while [ "$keep_note" -eq 0 ]; do
       sc_info ""
-      if sc_generate_note "$format" "$model" "$host" "$transcript"; then
+      if sc_generate_note "$format" "$model" "$host" "$transcript" "$style"; then
         if [ "$deidentify" -eq 1 ]; then
           if sc_deidentify_transcript "$SC_NOTE"; then
             SC_NOTE="$SC_DEIDENTIFY_TRANSCRIPT"
@@ -1031,6 +1236,7 @@ sc_cmd_session() {
         sc_info "----- $format note -----"
         printf '%s\n' "$SC_NOTE"
         sc_info "-------------------------"
+        [ -n "$SC_REVIEW" ] && sc_info "$SC_REVIEW"
         if [ -t 0 ]; then
           # LLM output is stochastic -- a weak draft is often just an
           # unlucky roll, so offer another attempt with the same

@@ -33,6 +33,18 @@ assert_eq() {
   fi
 }
 
+assert_contains() {
+  local desc="$1" haystack="$2" needle="$3" r=no
+  case "$haystack" in *"$needle"*) r=yes ;; esac
+  assert_eq "$desc" yes "$r"
+}
+
+assert_not_contains() {
+  local desc="$1" haystack="$2" needle="$3" r=yes
+  case "$haystack" in *"$needle"*) r=no ;; esac
+  assert_eq "$desc" yes "$r"
+}
+
 # --- sc_render_transcript: dedupe --------------------------------------
 
 # Real echo: mic (Therapist) hears the tail end of what system audio
@@ -196,6 +208,134 @@ assert_eq "deidentify: speaker label never sent to the helper, multi-line reasse
   "Sarah: HI THERE, WITH CAMILA.
 Client: SECOND LINE HERE." "$SC_DEIDENTIFY_TRANSCRIPT"
 rm -f "$stub"
+
+# --- structured style: rendering (lib/structured/render.jq) -------------
+
+sjq() { jq -r -L "$here/lib/structured" "$@"; }
+render() { sjq --arg format "$1" -f "$here/lib/structured/render.jq"; }
+
+empty_note='{"subjective": "", "objective_observations": [], "assessment": "", "response": "",
+  "risk": {"status": "not_addressed", "summary": ""},
+  "safety_plan": {"warning_signs": [], "coping_strategies": [], "supports": [], "emergency_steps": []},
+  "interventions_used": [], "plan_items": []}'
+
+assert_eq "render soap: an empty note still has exactly the four headers, filled in" \
+  "SUBJECTIVE:
+Not addressed in this session
+
+OBJECTIVE:
+No observable presentation details available from a text-only transcript.
+
+ASSESSMENT:
+Not addressed in this session
+
+PLAN:
+Not addressed in this session" "$(printf '%s' "$empty_note" | render soap)"
+
+assert_eq "render dap: no observations -> the fallback sentence closes Data" \
+  "DATA:
+Reported. No observable presentation details available from a text-only transcript." \
+  "$(printf '%s' "$empty_note" | jq '.subjective = "Reported."' | render dap | head -2)"
+
+assert_eq "render birp: the four BIRP headers, in order" "BEHAVIOR: INTERVENTION: RESPONSE: PLAN:" \
+  "$(printf '%s' "$empty_note" | render birp | grep -E '^[A-Z]+:$' | tr '\n' ' ' | sed 's/ $//')"
+
+assert_eq "render: risk not addressed adds nothing to Assessment" "Impression." \
+  "$(printf '%s' "$empty_note" | jq '.assessment = "Impression." | .risk.summary = "should not show"' \
+     | render soap | sed -n '/^ASSESSMENT:/{n;p;}')"
+
+assert_eq "render: next steps grouped three to a sentence, then the therapist's and shared ones" \
+  "The client agreed to a1, a2, and a3. The client also planned to a4. The therapist will t1. The client and therapist agreed to b1." \
+  "$(printf '%s' "$empty_note" | jq '.plan_items = [
+      {line:1,actor:"client",action:"a1"},{line:1,actor:"client",action:"a2"},{line:1,actor:"client",action:"a3"},
+      {line:1,actor:"client",action:"a4"},{line:1,actor:"therapist",action:"t1"},{line:1,actor:"both",action:"b1"}]' \
+     | render soap | sed -n '/^PLAN:/{n;p;}')"
+
+assert_eq "render: interventions go four to a sentence" \
+  "In session, the therapist did i1, did i2, did i3, and did i4. The therapist also did i5." \
+  "$(printf '%s' "$empty_note" | jq '.interventions_used = [range(1;6) | {line:1, action:"did i\(.)"}]' \
+     | render soap | sed -n '/^PLAN:/{n;p;}')"
+
+assert_eq "render: tidies phrases (\"commit to\", leading \"to\", trailing period), keeps proper nouns" \
+  "The client agreed to paint on Saturday, call Camila, and walk daily." \
+  "$(printf '%s' "$empty_note" | jq '.plan_items = [
+      {line:1,actor:"client",action:"Commit to paint on Saturday."},
+      {line:1,actor:"client",action:"to call Camila"},{line:1,actor:"client",action:"walk daily;"}]' \
+     | render soap | sed -n '/^PLAN:/{n;p;}')"
+
+assert_eq "render: the safety plan lists only the parts that were filled in" \
+  "The safety plan identified warning signs: skipping meals; and supports: the client's sister (Camila)." \
+  "$(printf '%s' "$empty_note" | jq '.safety_plan.warning_signs = ["skipping meals"] | .safety_plan.supports = ["the client'"'"'s sister (Camila)"]' \
+     | render soap | sed -n '/^PLAN:/{n;p;}')"
+
+# --- structured style: validation (lib/structured/validate.jq) ----------
+
+vtranscript=$(mktemp)
+printf "Therapist: I notice you are tearing up.\nClient: Yeah, it's a lot.\nClient: Just laying there for hours and not really eating much at all.\n" > "$vtranscript"
+validate() { sjq --rawfile transcript "$vtranscript" --arg format "${1:-soap}" -f "$here/lib/structured/validate.jq" | jq -r '.[]'; }
+
+assert_eq "validate: a clean note flags nothing" "" "$(printf '%s' "$empty_note" | validate)"
+
+assert_contains "validate: flags an observation attributed to the wrong speaker" \
+  "$(printf '%s' "$empty_note" | jq '.objective_observations = [{line:1,speaker:"Client",text:"Tearing up."}]' | validate)" \
+  "attributes a reaction to the Client, but line 1 is: Therapist: I notice"
+
+assert_contains "validate: flags a cited line that doesn't exist" \
+  "$(printf '%s' "$empty_note" | jq '.plan_items = [{line:9,actor:"client",action:"x"}]' | validate)" \
+  "cites line 9, which doesn't exist"
+
+assert_contains "validate: flags a quote that isn't in the transcript" \
+  "$(printf '%s' "$empty_note" | jq '.subjective = "They said \"I am getting choked up\"."' | validate)" \
+  "isn't in the transcript: \"I am getting choked up\""
+
+assert_eq "validate: a real quote passes, curly apostrophes and all" "" \
+  "$(printf '%s' "$empty_note" | jq '.subjective = "They said \u201cYeah, it\u2019s a lot\u201d."' | validate)"
+
+assert_contains "validate: flags an observation that copies a transcript line" \
+  "$(printf '%s' "$empty_note" | jq '.objective_observations = [{line:3,speaker:"Client",text:"Just laying there for hours and not really eating much at all."}]' | validate)" \
+  "Objective copies the transcript word for word (line 3)"
+
+assert_contains "validate: names the section a copy lands in, per format (BIRP: Behavior)" \
+  "$(printf '%s' "$empty_note" | jq '.objective_observations = [{line:3,speaker:"Client",text:"Just laying there for hours and not really eating much at all."}]' | validate birp)" \
+  "Behavior copies the transcript word for word (line 3)"
+
+assert_eq "validate: a short phrase shared with the transcript isn't a copy" "" \
+  "$(printf '%s' "$empty_note" | jq '.subjective = "The client said it was a lot."' | validate)"
+
+assert_contains "validate: flags a disclosed risk with no safety plan" \
+  "$(printf '%s' "$empty_note" | jq '.risk = {status:"disclosed", summary:"Passive SI."}' | validate)" \
+  "no safety plan was recorded"
+rm -f "$vtranscript"
+
+# --- structured style: drift guard ---------------------------------------
+# prompts/structured/rules.md is a fourth copy of the content rules. Every
+# rule bullet that's word-for-word identical across soap/dap/birp.md must
+# appear word-for-word in it too, so a fix to one isn't silently missed in
+# the other -- except the one rule the structured renderer implements in
+# code instead ("Not addressed in this session").
+
+drift_check() {  # RULES_FILE -> first line of each shared bullet missing from it
+  jq -rn --rawfile s "$here/prompts/soap.md" --rawfile d "$here/prompts/dap.md" \
+    --rawfile b "$here/prompts/birp.md" --rawfile r "$1" '
+  # One entry per rule bullet: a "- " line plus its indented continuations.
+  def bullets: split("\n") | reduce .[] as $l ({out: [], cur: null};
+      if ($l | startswith("- ")) then (if .cur then .out += [.cur] else . end) | .cur = $l
+      elif ($l | startswith("  ")) and .cur then .cur += "\n" + $l
+      else (if .cur then .out += [.cur] else . end) | .cur = null end)
+    | if .cur then .out + [.cur] else .out end;
+  ($d | bullets) as $D | ($b | bullets) as $B | ($r | bullets) as $R
+  | $s | bullets[] | . as $x
+  | select(startswith("- If any other section has no relevant content") | not)
+  | select(($D | any(.[]; . == $x)) and ($B | any(.[]; . == $x)) and ($R | any(.[]; . == $x) | not))
+  | split("\n")[0]'
+}
+assert_eq "drift guard: rules shared by all three prompts are also in the structured rules" "" \
+  "$(drift_check "$here/prompts/structured/rules.md")"
+mutated=$(mktemp)
+sed 's/Do not assign or imply a diagnosis/Do not assign a diagnosis/' "$here/prompts/structured/rules.md" > "$mutated"
+assert_eq "drift guard: catches a shared rule edited in only one place" \
+  "- Do not assign or imply a diagnosis unless one was explicitly discussed" "$(drift_check "$mutated")"
+rm -f "$mutated"
 
 # shellcheck source=test/flow.sh
 . "$here/test/flow.sh"

@@ -12,6 +12,7 @@ SOAPCAP_LOCALE="${SOAPCAP_LOCALE:-}"
 # "Draft a note".
 SOAPCAP_MODEL="${SOAPCAP_MODEL:-llama3.1:8b}"
 SOAPCAP_FORMAT="${SOAPCAP_FORMAT:-soap}"
+SOAPCAP_STYLE="${SOAPCAP_STYLE:-narrative}"
 SOAPCAP_OLLAMA_HOST="${SOAPCAP_OLLAMA_HOST:-http://localhost:11434}"
 
 # `deidentify` (local PII redaction via tools/deidentify-helper, built
@@ -263,6 +264,7 @@ OPTIONS (note / session)
   --out FILE            Write the note to FILE (default: stdout only)
   --model NAME          llama3.1:8b (default) or bonsai — see OTHER MODELS
   --format soap|dap|birp Note format           (default: soap)
+  --style STYLE         narrative (default), structured, or combined — see STYLES
   --host URL            Ollama server URL      (default: http://localhost:11434)
 
 OPTIONS (session only)
@@ -277,6 +279,16 @@ MODELS
   bonsai                Slower, more careful. Set up once with
                         tools/bonsai/install.sh (builds a llama.cpp fork,
                         ~6GB download; wants a 16GB+ Mac).
+
+STYLES (structured and combined are experimental)
+  narrative             Default. The model writes the note as prose.
+  structured            The model fills in fields citing transcript lines;
+                        soapcap checks them against the transcript and
+                        writes the note. Briefer Subjective, complete Plan.
+  combined              A narrative note plus a review of it: unverified
+                        quotes, missed reactions, undocumented risk, and a
+                        next-steps checklist. Two passes — roughly twice
+                        as long. Reviews print to stderr, never the note.
 
 OTHER MODELS (untested)
   Any other Ollama model works too, but soapcap's prompts haven't been

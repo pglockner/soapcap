@@ -26,6 +26,10 @@ SOAPCAP_LOCALE=""
 # with soapcap's prompts — see README "Draft a note".
 # SOAPCAP_MODEL="llama3.1:8b"       # or "bonsai"
 # SOAPCAP_FORMAT="soap"             # soap | dap | birp
+# SOAPCAP_STYLE="narrative"         # narrative | structured | combined —
+#                                   # see README "Note style"; combined takes
+#                                   # roughly twice as long, and the window
+#                                   # app doesn't show its review yet
 # SOAPCAP_OLLAMA_HOST="http://localhost:11434"
 
 # Bonsai's install location (export it when running tools/bonsai/install.sh

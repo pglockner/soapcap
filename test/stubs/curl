@@ -8,6 +8,12 @@
 # Bonsai's llama-server: /health answers only while the stub llama-server
 # is running (per STUB_LLAMA_LOG), or always with STUB_LLAMA_BUSY=1.
 # STUB_BONSAI_REPLY: ok (default) | error | length | hang.
+# Structured-style requests (a schema in Ollama's `format` or Bonsai's
+# `response_format`) get schema-shaped JSON back instead of a prose note.
+# STUB_STRUCT_MODE: ok (default) | invalid (always malformed) |
+# invalid_once (malformed first, then ok; needs STUB_STRUCT_COUNT, a file)
+# | length (cut off at the output cap). STUB_CURL_PAYLOG, if set, gets
+# every request payload, one compact JSON per line.
 [ -n "${STUB_CURL_ARGS:-}" ] && printf '%s\n' "$*" >> "$STUB_CURL_ARGS"
 url=""; payload=""; out=""
 while [ $# -gt 0 ]; do
@@ -20,9 +26,36 @@ while [ $# -gt 0 ]; do
 done
 [ -n "${STUB_CURL_LOG:-}" ] && echo "$url" >> "$STUB_CURL_LOG"
 [ -n "$payload" ] && [ -n "${STUB_CURL_PAYLOAD:-}" ] && printf '%s' "$payload" > "$STUB_CURL_PAYLOAD"
+[ -n "$payload" ] && [ -n "${STUB_CURL_PAYLOG:-}" ] && printf '%s' "$payload" | jq -c . >> "$STUB_CURL_PAYLOG"
 
 mode="${STUB_OLLAMA_MODE:-up}"
 emit() { if [ -n "$out" ]; then printf '%s' "$1" > "$out"; else printf '%s' "$1"; fi; }
+
+# A schema-carrying request? Then answer with structured JSON (as a string)
+# plus a stop reason, per STUB_STRUCT_MODE.
+structured=no
+[ -n "$payload" ] && printf '%s' "$payload" | jq -e 'has("format") or has("response_format")' >/dev/null 2>&1 && structured=yes
+struct_reply() {
+  local smode="${STUB_STRUCT_MODE:-ok}" n=0
+  if [ "$smode" = invalid_once ]; then
+    n=$(cat "$STUB_STRUCT_COUNT" 2>/dev/null || echo 0); echo $((n + 1)) > "$STUB_STRUCT_COUNT"
+    [ "$n" -eq 0 ] && smode=invalid || smode=ok
+  fi
+  case "$smode" in
+    invalid) STRUCT_JSON='{"subjective": "cut off mid-'; STRUCT_DONE=stop ;;
+    length)  STRUCT_JSON='{"subjective": "cut off at the cap'; STRUCT_DONE=length ;;
+    *) STRUCT_JSON=$(jq -nc '{
+         subjective: "Stub structured subjective.",
+         objective_observations: [{line: 1, speaker: "Therapist", text: "Stub observation."}],
+         assessment: "Stub structured assessment.",
+         response: "Stub structured response.",
+         risk: {status: "disclosed", summary: "Stub risk summary."},
+         safety_plan: {warning_signs: ["a stub sign"], coping_strategies: [], supports: [], emergency_steps: ["calling 988"]},
+         interventions_used: [{line: 1, action: "reviewed a stub exercise"}],
+         plan_items: [{line: 2, actor: "client", action: "do a stub task"}]}')
+       STRUCT_DONE=stop ;;
+  esac
+}
 
 case "$url" in
   */api/tags)
@@ -33,7 +66,12 @@ case "$url" in
     case "$mode" in
       error) emit '{"error":"boom"}' ;;
       empty) emit '{"response":""}' ;;
-      *) emit '{"response":"SUBJECTIVE:\nStub note\n\nOBJECTIVE:\nNo observable presentation details available from a text-only transcript.\n\nASSESSMENT:\nStub assessment.\n\nPLAN:\nStub plan."}' ;;
+      *) if [ "$structured" = yes ]; then
+           struct_reply
+           emit "$(jq -nc --arg r "$STRUCT_JSON" --arg d "$STRUCT_DONE" '{response: $r, done_reason: $d}')"
+         else
+           emit '{"response":"SUBJECTIVE:\nStub note\n\nOBJECTIVE:\nNo observable presentation details available from a text-only transcript.\n\nASSESSMENT:\nStub assessment.\n\nPLAN:\nStub plan."}'
+         fi ;;
     esac ;;
   */health)
     [ "${STUB_LLAMA_BUSY:-}" = 1 ] && { printf '{"status":"ok"}'; exit 0; }
@@ -41,6 +79,11 @@ case "$url" in
     printf '{"status":"ok"}' ;;
   */v1/chat/completions)
     note='SUBJECTIVE:\nBonsai stub note\n\nOBJECTIVE:\nStub.\n\nASSESSMENT:\nStub.\n\nPLAN:\nStub.'
+    if [ "$structured" = yes ]; then
+      struct_reply
+      emit "$(jq -nc --arg c "$STRUCT_JSON" --arg d "$STRUCT_DONE" '{choices: [{message: {content: $c}, finish_reason: $d}]}')"
+      exit 0
+    fi
     case "${STUB_BONSAI_REPLY:-ok}" in
       error)  emit '{"error":{"code":500,"message":"boom","type":"server_error"}}' ;;
       length) emit "{\"choices\":[{\"message\":{\"content\":\"$note\"},\"finish_reason\":\"length\"}]}" ;;
