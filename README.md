@@ -223,10 +223,7 @@ Formats: `soap` (default), `dap`, `birp`.
     denial like "denied suicidal ideation" doesn't count as risk language).
   - **A disclosure** replaces it with a fixed line naming only the kind:
     "SI reported; see Assessment and Plan." (or HI, SI and HI,
-    self-harm). The model only picks the kind. Its own one-line
-    summaries were tried, and llama3.1:8b called an active plan with
-    means "passive, no plan or intent". Plan, intent and means belong in
-    Assessment and Plan, so check them there.
+    self-harm). Check plan, intent and means in Assessment and Plan.
   - **Risk language in the note that the Objective pass missed** gives a
     bracketed "[… confirm SI/HI status before signing.]" instead.
   - **If the Objective pass fails**, the rest of the note is kept, and
@@ -266,16 +263,15 @@ long sessions aren't silently truncated.
 While it drafts, a status line shows elapsed time and memory in use,
 turning yellow at 75% and red at 90%. The number counts swap too, so it
 passes 100% once the Mac is swapping to make room, which slows drafting
-a lot. Closing other apps is the fix. Either model is unloaded as soon as the note
-is done, so its memory is free again (Ollama would otherwise keep
-llama3.1:8b loaded for five minutes).
+a lot. Closing other apps is the fix. The model is unloaded as soon as the
+note is done.
 
 **Models** — the two soapcap's prompts are tested with:
 
 | Model | Size | Notes |
 |---|---|---|
-| `llama3.1:8b` | ~5GB | **Default.** Fast (usually under a minute a note). In testing it often assumed a client's pronoun from their name alone (in SOAP notes, most of the time), and sometimes escalated a client's "choked up" into "tearful" — proofread pronouns and the Objective section. |
-| `bonsai` | ~6GB (16GB+ Mac) | Bonsai 2 27B, a ternary-weight model from PrismML. Slower — a few minutes a note on a 16GB Mac mini — and uses most of that Mac's memory while it runs. In testing it kept neutral pronouns every time and was much less prone than llama3.1:8b to inventing or escalating in-session reactions — though still proofread it. |
+| `llama3.1:8b` | ~5GB | **Default.** Fast: 1–2 minutes a SOAP note. Often assigns a pronoun from the client's name and gets details wrong. Proofread pronouns and facts. |
+| `bonsai` | ~6GB (16GB+ Mac) | Bonsai 2 27B, a ternary-weight model from PrismML. Slower (4–8 minutes a SOAP note), and it uses most of a 16GB Mac's memory while it runs. More accurate, and keeps pronouns neutral. Still proofread it. |
 
 **`soapcap model`** shows both with their live status and lets you pick
 one as the default for `session`/`note` (pulling `llama3.1:8b` via Ollama
@@ -318,7 +314,9 @@ soapcap note --model qwen2.5:14b transcript.txt
 ```
 
 To make it stick, set `SOAPCAP_MODEL="qwen2.5:14b"` in
-`~/.config/soapcap/config.sh`.
+`~/.config/soapcap/config.sh`. `qwen2.5:14b` (~9GB, about as fast as the
+default) is a reasonable middle ground, but in SOAP notes it often assigns
+pronouns from names and adds detail the transcript doesn't support.
 
 **Note style** — `--style`, or `SOAPCAP_STYLE` in config. `structured` and
 `combined` are experimental.
@@ -327,42 +325,23 @@ To make it stick, set `SOAPCAP_MODEL="qwen2.5:14b"` in
 |---|---|---|
 | `narrative` | **Default.** The model writes the note as prose from `prompts/<format>.md`. | Fullest Subjective and the most natural wording. Format rules depend on the model following the prompt. |
 | `structured` | The model fills in a fixed set of fields — each Objective observation (DAP/BIRP) and next step cites the transcript line it comes from — and soapcap checks them and writes the note itself. SOAP's Objective still comes from its own pass. | Headers, the Objective rule and "Not addressed" are guaranteed by code rather than the model. Plan lists every commitment, and a disclosed risk's safety plan (warning signs, coping strategies, supports, emergency steps) in full. Cited lines, who-said-what, and quotes are checked against the transcript. But Subjective comes out briefer than narrative's, and Plan reads as composed sentences rather than free prose. |
-| `combined` | A narrative note, plus a structured pass used only to check it. | The narrative note, unchanged, plus a review: quotes that aren't in the transcript, a safety risk or safety screen the note doesn't mention, and a checklist of the next steps mentioned in the session. **One more model pass** than narrative, so SOAP takes three (before SOAP's Objective pass, an hour-long session with Bonsai on a 16GB Mac mini took ~5 min narrative, ~11 min combined). |
+| `combined` | A narrative note, plus a structured pass used only to check it. | The narrative note, unchanged, plus a review: quotes that aren't in the transcript, a safety risk or safety screen the note doesn't mention, and a checklist of the next steps mentioned in the session. **One more model pass** than narrative, so SOAP takes three. |
 
-What `structured` has been tested on so far: mainly Bonsai with SOAP (the
-[sample transcripts](samples/transcripts/) 04 and 08, several runs each),
-where it listed every commitment and the full safety plan every time, and
-one Bonsai BIRP run, where Intervention came out as a long list — Bonsai
-counted every question the therapist asked as an intervention. With
-`llama3.1:8b`, structured DAP/BIRP notes copied transcript lines word for
-word into Data/Behavior; the review flags it, but the copied text stays in
-the note, so read those closely or use `narrative` with that model.
+With `llama3.1:8b`, structured DAP/BIRP notes can copy transcript lines
+word for word; use `narrative` with that model.
 
 Reviews print to the terminal only (stderr) — never into the note, `--out`,
 or the clipboard. The window app doesn't show them yet, so `combined`
 there costs the extra time with nothing to show for it; use `narrative`
 or `structured` with the app for now.
 
-The next-steps checklist is just that — every next step the check found,
-with the transcript line it came from. It doesn't try to say which ones
-the note is missing: word matching was tried, and it was wrong more often
-than right.
+The next-steps checklist lists every next step the check found, with its
+transcript line. It doesn't say which ones the note is missing; check
+those yourself.
 
-Structured style's content rules live in
-[`prompts/structured/rules.md`](prompts/structured/rules.md), a copy of the
-rules the three narrative prompts share; `test/run.sh` fails if the copies
-drift apart. Its field guide and schema are alongside it, and the checks
-and rendering are jq in [`lib/structured/`](lib/structured/).
-
-`qwen2.5:14b` is the one other model run through the same baseline (the
-[sample transcripts](samples/transcripts/) 03, 04, 07 and 08, three runs
-each in all three formats, at two temperatures). It's a reasonable middle
-ground if you want something more careful than the default without
-building Bonsai: about as fast as `llama3.1:8b` (median ~30s a note) but
-~9GB, and in BIRP/DAP notes it kept neutral pronouns every time. In SOAP
-notes, though, it assumed a pronoun from the client's name in 11 of 18
-runs (Bonsai: 0), and it tends to add color the transcript doesn't
-support — "visibly relaxed", "affect was…", "appeared emotional".
+Structured style's rules, field guide and schema are in
+[`prompts/structured/`](prompts/structured/); its checks and rendering are
+in [`lib/structured/`](lib/structured/).
 
 Other flags: `--style STYLE`, `--duration MINUTES`, `--host URL`, `--clipboard`.
 
