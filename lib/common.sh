@@ -14,6 +14,12 @@ SOAPCAP_MODEL="${SOAPCAP_MODEL:-llama3.1:8b}"
 SOAPCAP_FORMAT="${SOAPCAP_FORMAT:-soap}"
 SOAPCAP_STYLE="${SOAPCAP_STYLE:-narrative}"
 SOAPCAP_OLLAMA_HOST="${SOAPCAP_OLLAMA_HOST:-http://localhost:11434}"
+# The note's first line, e.g. "63 minutes, telehealth" (sc_session_line).
+SOAPCAP_SESSION_TYPE="${SOAPCAP_SESSION_TYPE:-telehealth}"
+# Where `session` saves a de-identified transcript, when asked to. Not
+# ~/Documents, which iCloud Drive often syncs, and not a dot-folder, which
+# note's file picker skips.
+SOAPCAP_SAVE_DIR="${SOAPCAP_SAVE_DIR:-$HOME/soapcap/transcripts}"
 
 # `deidentify` (local PII redaction via tools/deidentify-helper, built
 # opt-in by install.sh — see README "De-identify"). SC_ROOT is set by
@@ -267,6 +273,10 @@ OPTIONS (note / session)
   --style STYLE         narrative (default), structured, or combined — see STYLES
   --host URL            Ollama server URL      (default: http://localhost:11434)
 
+OPTIONS (note only)
+  --duration MINUTES    Start the note with "MINUTES minutes, telehealth"
+                        (session adds this line itself, from recording time)
+
 OPTIONS (session only)
   --no-note              Skip drafting a note; just capture and print
 
@@ -280,15 +290,21 @@ MODELS
                         tools/bonsai/install.sh (builds a llama.cpp fork,
                         ~6GB download; wants a 16GB+ Mac).
 
+SOAP OBJECTIVE
+  A SOAP note's Objective always comes from a second model pass: a
+  mental-status summary in a fixed frame ("On time via video. ... No SI/HI
+  reported."), with every style — so a SOAP note takes two passes (three
+  with combined).
+
 STYLES (structured and combined are experimental)
   narrative             Default. The model writes the note as prose.
   structured            The model fills in fields citing transcript lines;
                         soapcap checks them against the transcript and
                         writes the note. Briefer Subjective, complete Plan.
   combined              A narrative note plus a review of it: unverified
-                        quotes, missed reactions, undocumented risk, and a
-                        next-steps checklist. Two passes — roughly twice
-                        as long. Reviews print to stderr, never the note.
+                        quotes, undocumented risk, and a next-steps
+                        checklist. One extra pass.
+                        Reviews print to stderr, never the note.
 
 OTHER MODELS (untested)
   Any other Ollama model works too, but soapcap's prompts haven't been
@@ -308,6 +324,8 @@ RETENTION
   By default nothing touches disk: the transcript (and note) print once to
   stdout and no working file survives the run. --out / --keep-json opt in to
   files, and --clipboard to the clipboard — all of which then hold PHI and
-  are your responsibility to clear.
+  are your responsibility to clear. session can also save a de-identified
+  transcript to ~/soapcap/transcripts (SOAPCAP_SAVE_DIR) — only if you say
+  so. Keep saved files out of folders that sync to iCloud or other clouds.
 EOF
 }

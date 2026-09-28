@@ -57,9 +57,15 @@ Rules:
   is wrong regardless of which one prompted it — before finalizing your
   answer, reread your own OBJECTIVE section once and check it is A or B,
   never both.
-- If any other section has no relevant content in the transcript, write
-  "Not addressed in this session" for that section instead of guessing or
-  padding it out.
+- If SUBJECTIVE or ASSESSMENT has no relevant content in the transcript,
+  write "Not addressed in this session" for that section instead of
+  guessing or padding it out. PLAN always states the plan of care: first
+  the interventions, homework, next steps, referrals and follow-up this
+  session covered. Then, when the session left the overall plan of care
+  as it was — no new referral, safety plan, change in session frequency,
+  or new treatment direction — close PLAN with the sentence "The current
+  plan of care will continue." When the session did change the plan of
+  care, close PLAN by stating the change instead.
 - You may include a small number of brief, directly-quoted client
   statements where clinically significant. Do not quote at length.
 - Do not assign or imply a diagnosis unless one was explicitly discussed
@@ -123,5 +129,6 @@ ASSESSMENT:
 considerations>
 
 PLAN:
-<interventions used this session, homework or next steps, follow-up,
-referrals>
+<the plan of care: interventions used this session, homework or next
+steps, follow-up, referrals — closing with "The current plan of care
+will continue." when the session left the plan of care unchanged>

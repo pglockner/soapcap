@@ -12,7 +12,10 @@
 # `response_format`) get schema-shaped JSON back instead of a prose note.
 # STUB_STRUCT_MODE: ok (default) | invalid (always malformed) |
 # invalid_once (malformed first, then ok; needs STUB_STRUCT_COUNT, a file)
-# | length (cut off at the output cap). STUB_CURL_PAYLOG, if set, gets
+# | length (cut off at the output cap). A request whose schema requires
+# mental_status (SOAP's Objective pass) gets that shape instead, per
+# STUB_OBJ_MODE: ok (default) | invalid (always malformed); its risk status
+# is STUB_OBJ_RISK (default not_addressed). STUB_CURL_PAYLOG, if set, gets
 # every request payload, one compact JSON per line.
 [ -n "${STUB_CURL_ARGS:-}" ] && printf '%s\n' "$*" >> "$STUB_CURL_ARGS"
 url=""; payload=""; out=""
@@ -24,6 +27,12 @@ while [ $# -gt 0 ]; do
     *) shift ;;
   esac
 done
+# An unload request (keep_alive 0, no prompt) is logged as "unload MODEL",
+# and kept out of the payload files the tests read.
+if [ -n "$payload" ] && printf '%s' "$payload" | jq -e '.keep_alive == 0 and (has("prompt") | not)' >/dev/null 2>&1; then
+  [ -n "${STUB_CURL_LOG:-}" ] && echo "unload $(printf '%s' "$payload" | jq -r .model)" >> "$STUB_CURL_LOG"
+  exit 0
+fi
 [ -n "${STUB_CURL_LOG:-}" ] && echo "$url" >> "$STUB_CURL_LOG"
 [ -n "$payload" ] && [ -n "${STUB_CURL_PAYLOAD:-}" ] && printf '%s' "$payload" > "$STUB_CURL_PAYLOAD"
 [ -n "$payload" ] && [ -n "${STUB_CURL_PAYLOG:-}" ] && printf '%s' "$payload" | jq -c . >> "$STUB_CURL_PAYLOG"
@@ -37,6 +46,17 @@ structured=no
 [ -n "$payload" ] && printf '%s' "$payload" | jq -e 'has("format") or has("response_format")' >/dev/null 2>&1 && structured=yes
 struct_reply() {
   local smode="${STUB_STRUCT_MODE:-ok}" n=0
+  if printf '%s' "$payload" | jq -e '(.format // .response_format.json_schema.schema).required | index("mental_status")' >/dev/null 2>&1; then
+    STRUCT_DONE=stop
+    if [ "${STUB_OBJ_MODE:-ok}" = invalid ]; then STRUCT_JSON='{"mental_status": {'; return; fi
+    STRUCT_JSON=$(jq -nc --arg r "${STUB_OBJ_RISK:-not_addressed}" '{
+      mental_status: {engagement: "stub engaged", affect: "stub affect", mood: "stub mood",
+        speech: "stub speech", thought_process: "stub thought", insight: "stub insight",
+        judgment: "stub judgment", psychomotor: "stub psychomotor"},
+      risk: {status: $r, summary: ""},
+      risk_kind: (if $r == "disclosed" then "HI" else "none" end)}')
+    return
+  fi
   if [ "$smode" = invalid_once ]; then
     n=$(cat "$STUB_STRUCT_COUNT" 2>/dev/null || echo 0); echo $((n + 1)) > "$STUB_STRUCT_COUNT"
     [ "$n" -eq 0 ] && smode=invalid || smode=ok

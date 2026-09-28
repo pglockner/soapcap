@@ -32,6 +32,15 @@ SOAPCAP_LOCALE=""
 #                                   # app doesn't show its review yet
 # SOAPCAP_OLLAMA_HOST="http://localhost:11434"
 
+# The note's first line, e.g. "63 minutes, telehealth". session fills in
+# the minutes from recording time (pauses excluded); note takes --duration.
+# SOAPCAP_SESSION_TYPE="telehealth"
+
+# Where session saves a de-identified transcript, if you choose to. Keep
+# it out of any folder that syncs to a cloud service (iCloud Drive's
+# "Desktop & Documents Folders", Dropbox, ...).
+# SOAPCAP_SAVE_DIR="$HOME/soapcap/transcripts"
+
 # Bonsai's install location (export it when running tools/bonsai/install.sh
 # too, if you change it) — or instead point the two paths at a llama-server
 # build of PrismML's llama.cpp fork and the PTQ1_0 GGUF you already have.

@@ -201,18 +201,74 @@ surface anything suggesting risk (self-harm, harm to others, abuse, crisis),
 and write "Not addressed in this session" rather than pad a section out.
 Formats: `soap` (default), `dap`, `birp`.
 
+**SOAP notes** follow a fixed house format:
+
+- **Objective** is a brief mental-status summary, drafted by a **second
+  model pass** of its own ([`prompts/objective.md`](prompts/objective.md)).
+  The model supplies one short clinical phrase for each of engagement,
+  affect, mood, speech, thought process, insight, judgment and psychomotor.
+  soapcap puts them in a fixed frame:
+
+  > On time via video. Engaged and collaborative. Affect congruent; mood
+  > mildly stressed. Speech clear and articulate. Thought process linear.
+  > Insight improving; judgment intact. No psychomotor abnormalities. No
+  > SI/HI reported.
+
+  These phrases are the model's judgment from a text transcript, not
+  something it observed, so check each one against what you saw. "On
+  time via video." is fixed text; edit it when that isn't true. The last
+  sentence depends on what the session showed:
+  - **"No SI/HI reported."** appears only when the Objective pass found no
+    disclosure *and* the rest of the note has no risk language (a plain
+    denial like "denied suicidal ideation" doesn't count as risk language).
+  - **A disclosure** replaces it with a fixed line naming only the kind:
+    "SI reported; see Assessment and Plan." (or HI, SI and HI,
+    self-harm). The model only picks the kind. Its own one-line
+    summaries were tried, and llama3.1:8b called an active plan with
+    means "passive, no plan or intent". Plan, intent and means belong in
+    Assessment and Plan, so check them there.
+  - **Risk language in the note that the Objective pass missed** gives a
+    bracketed "[… confirm SI/HI status before signing.]" instead.
+  - **If the Objective pass fails**, the rest of the note is kept, and
+    Objective says in brackets that it needs completing by hand.
+  - **If the transcript has no client lines at all** (the other side of
+    the call wasn't captured), there's no Objective pass. Objective says
+    in brackets to complete it by hand, rather than rating the therapist.
+- **Plan** always states the plan of care. It covers what the session
+  set up (interventions, homework, referrals, follow-up) and then closes
+  with "The current plan of care will continue." when the session didn't
+  change the plan of care. The models don't always get that distinction
+  right, so check that closing line when a session did change the plan.
+- **Session line.** With `--duration MINUTES`, the note starts with a line
+  like `63 minutes, telehealth`. `session` adds it automatically from
+  recording time: whole minutes, rounded down, with paused time left out.
+  Set `SOAPCAP_SESSION_TYPE` in config to change "telehealth". A
+  transcript file doesn't record how long the session ran, so `note FILE`
+  leaves the line out unless you pass `--duration`.
+
+The second pass makes a SOAP note take roughly twice as long as a DAP or
+BIRP note.
+
 To try it without a real session, use the fictional transcripts in
 [`samples/transcripts/`](samples/transcripts/). Its README explains what
 each one tests, for prompt tuning and for de-identification.
 
 **Read every note before it goes near a chart.** It's still an LLM. Mistakes
-concentrate in the Objective section, the one part that requires telling an
-actual in-the-room observation apart from a client's own description of how
-they've been feeling — a smaller model can either invent detail that isn't
-there or miss detail that is.
+concentrate in the Objective section. In a SOAP note it's a mental-status
+judgment made from text alone; in DAP/BIRP, telling an actual in-the-room
+observation apart from a client's own description of how they've been
+feeling. Either way, a smaller model can invent detail that isn't there or
+miss detail that is.
 
 `note` sizes the model's context window to the transcript's length, so
 long sessions aren't silently truncated.
+
+While it drafts, a status line shows elapsed time and memory in use,
+turning yellow at 75% and red at 90%. The number counts swap too, so it
+passes 100% once the Mac is swapping to make room, which slows drafting
+a lot. Closing other apps is the fix. Either model is unloaded as soon as the note
+is done, so its memory is free again (Ollama would otherwise keep
+llama3.1:8b loaded for five minutes).
 
 **Models** — the two soapcap's prompts are tested with:
 
@@ -270,8 +326,8 @@ To make it stick, set `SOAPCAP_MODEL="qwen2.5:14b"` in
 | Style | What happens | Trade-off |
 |---|---|---|
 | `narrative` | **Default.** The model writes the note as prose from `prompts/<format>.md`. | Fullest Subjective and the most natural wording. Format rules depend on the model following the prompt. |
-| `structured` | The model fills in a fixed set of fields — each Objective observation and next step cites the transcript line it comes from — and soapcap checks them and writes the note itself. | Headers, the Objective rule and "Not addressed" are guaranteed by code rather than the model. Plan lists every commitment, and a disclosed risk's safety plan (warning signs, coping strategies, supports, emergency steps) in full. Cited lines, who-said-what, and quotes are checked against the transcript. But Subjective comes out briefer than narrative's, and Plan reads as composed sentences rather than free prose. |
-| `combined` | A narrative note, plus a structured pass used only to check it. | The narrative note, unchanged, plus a review: quotes that aren't in the transcript, an Objective saying "none" when the transcript has an in-the-moment reaction (or the reverse), a safety risk or safety screen the note doesn't mention, and a checklist of the next steps mentioned in the session. **Roughly twice as long to draft** — two model passes (an hour-long session with Bonsai on a 16GB Mac mini: ~5 min narrative, ~11 min combined). |
+| `structured` | The model fills in a fixed set of fields — each Objective observation (DAP/BIRP) and next step cites the transcript line it comes from — and soapcap checks them and writes the note itself. SOAP's Objective still comes from its own pass. | Headers, the Objective rule and "Not addressed" are guaranteed by code rather than the model. Plan lists every commitment, and a disclosed risk's safety plan (warning signs, coping strategies, supports, emergency steps) in full. Cited lines, who-said-what, and quotes are checked against the transcript. But Subjective comes out briefer than narrative's, and Plan reads as composed sentences rather than free prose. |
+| `combined` | A narrative note, plus a structured pass used only to check it. | The narrative note, unchanged, plus a review: quotes that aren't in the transcript, a safety risk or safety screen the note doesn't mention, and a checklist of the next steps mentioned in the session. **One more model pass** than narrative, so SOAP takes three (before SOAP's Objective pass, an hour-long session with Bonsai on a 16GB Mac mini took ~5 min narrative, ~11 min combined). |
 
 What `structured` has been tested on so far: mainly Bonsai with SOAP (the
 [sample transcripts](samples/transcripts/) 04 and 08, several runs each),
@@ -308,7 +364,7 @@ notes, though, it assumed a pronoun from the client's name in 11 of 18
 runs (Bonsai: 0), and it tends to add color the transcript doesn't
 support — "visibly relaxed", "affect was…", "appeared emotional".
 
-Other flags: `--style STYLE`, `--host URL`, `--clipboard`.
+Other flags: `--style STYLE`, `--duration MINUTES`, `--host URL`, `--clipboard`.
 
 ### De-identify
 
@@ -369,13 +425,21 @@ it looks like a full-screen app and clears when you press Enter at the end.
 1. **De-identify?** Only asked if the [de-identify](#de-identify) helper is
    built. One yes/no: yes redacts the transcript (the redacted text is what
    is displayed, drafted from, and copied), and redacts the drafted note
-   again before it's shown.
+   again before it's shown. If redaction succeeds, it then asks **Save the
+   de-identified transcript?** (default **no**). Yes writes it to
+   `~/soapcap/transcripts/<date>-<time>.deid.transcript`
+   (`SOAPCAP_SAVE_DIR`), readable only by you. Deliberately not
+   `~/Documents`, which iCloud Drive often syncs. `note`'s file picker finds it later. It's still
+   best-effort redaction, so read it before sharing and delete it when
+   you're done.
 2. **Show the transcript?**
 3. **Draft a note from this?** (worded "Draft a de-identified note…" if you
    said yes to step 1), then **Format?** (soap, dap, birp).
 4. **This draft: keep / regenerate / discard.** `regenerate` drafts again
    with the same model and transcript; `discard` ends with no note. `keep`
-   copies the note to the clipboard.
+   copies the note to the clipboard. The note opens with the session line
+   (e.g. `63 minutes, telehealth`) — recording time, pauses excluded; see
+   [Draft a note](#draft-a-note).
 
 Enter takes the default at every prompt; without
 [gum](#nicer-prompts-and-file-picking), a bare first letter works too (`r`
@@ -525,10 +589,14 @@ never produces (see [Retention](#retention)).
   JSON to a single file in a `chmod 700` `$TMPDIR` directory (holding only
   that and `yap`'s stderr); every exit path — normal stop, `kill`, a crash —
   `rm -rf`s it.
-- `--out` / `--keep-json` are explicit opt-ins. Those files hold PHI and are
+- `--out` / `--keep-json`, and `session`'s "Save the de-identified
+  transcript?" (default no), are explicit opt-ins. Those files hold PHI and are
   **your responsibility to delete** — `rm` on an APFS SSD doesn't overwrite
   data, so there's no "secure erase" claim here; not writing the file, or
-  keeping it on an encrypted volume, is the safe path.
+  keeping it on an encrypted volume, is the safe path. Keep these files
+  out of any folder that syncs to a cloud service — iCloud Drive's
+  "Desktop & Documents Folders" option, Dropbox, and the like — since
+  that sends PHI to a third party.
 - Your **terminal scrollback** holds whatever printed to stdout. Clear it
   (`Cmd-K`) after copying a transcript or note if you didn't use `--out`.
   `session` is the exception: it draws to the terminal's **alternate screen

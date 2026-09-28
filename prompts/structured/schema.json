@@ -14,6 +14,20 @@
   },
   "assessment": { "type": "string" },
   "response": { "type": "string" },
+  "mental_status": {
+    "type": "object",
+    "properties": {
+      "engagement": { "type": "string", "maxLength": 100 },
+      "affect": { "type": "string", "maxLength": 100 },
+      "mood": { "type": "string", "maxLength": 100 },
+      "speech": { "type": "string", "maxLength": 100 },
+      "thought_process": { "type": "string", "maxLength": 100 },
+      "insight": { "type": "string", "maxLength": 100 },
+      "judgment": { "type": "string", "maxLength": 100 },
+      "psychomotor": { "type": "string", "maxLength": 100 }
+    },
+    "required": ["engagement", "affect", "mood", "speech", "thought_process", "insight", "judgment", "psychomotor"]
+  },
   "risk": {
     "type": "object",
     "properties": {
@@ -22,6 +36,7 @@
     },
     "required": ["status", "summary"]
   },
+  "risk_kind": { "type": "string", "enum": ["none", "SI", "HI", "SI and HI", "self-harm"] },
   "safety_plan": {
     "type": "object",
     "properties": {

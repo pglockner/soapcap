@@ -14,10 +14,12 @@
 #                       SC_CAPTURE_ACTION=paused for the caller to act on).
 #                       Otherwise (piped/scripted/backgrounded): the older
 #                       signal-only behavior, no keypress reading at all.
-# On success sets SC_JSON to yap's JSON document and returns 0.
+# On success sets SC_JSON to yap's JSON document and returns 0. Either way
+# sets SC_CAPTURE_SECONDS to how long yap was recording.
 sc_capture() {
   SC_JSON=""
   SC_CAPTURE_ACTION="stopped"
+  SC_CAPTURE_SECONDS=0
   local mic="$1" sys="$2" locale="${3:-}" maxs="${4:-0}"
 
   local wd
@@ -30,6 +32,7 @@ sc_capture() {
   yargs=( listen-and-dictate --json --mic-label "$mic" --system-label "$sys" )
   [ -n "$locale" ] && yargs=( "${yargs[@]}" --locale "$locale" )
 
+  local t0=$SECONDS
   yap "${yargs[@]}" >"$jf" 2>"$ef" &
   local ypid=$!
 
@@ -78,6 +81,7 @@ sc_capture() {
   fi
 
   wait "$ypid" 2>/dev/null
+  SC_CAPTURE_SECONDS=$((SECONDS - t0))
 
   [ -s "$ef" ] && sed 's/^/  yap: /' "$ef" >&2
   [ -s "$jf" ] && SC_JSON=$(cat "$jf")
@@ -96,14 +100,18 @@ sc_capture() {
 # single SC_JSON before returning, so callers see exactly what they did
 # before this existed. Falls back to a single plain sc_capture call when
 # stdin isn't a terminal (nothing to read a keypress from, and pausing was
-# never on offer there anyway).
+# never on offer there anyway). Sets SC_SESSION_SECONDS to the time spent
+# recording, summed across legs -- time spent paused doesn't count.
 sc_capture_session() {
   SC_JSON=""
+  SC_SESSION_SECONDS=0
   local mic="$1" sys="$2" locale="${3:-}"
 
   if [ ! -t 0 ]; then
     sc_capture "$mic" "$sys" "$locale" 0
-    return
+    local rc=$?
+    SC_SESSION_SECONDS=$SC_CAPTURE_SECONDS
+    return "$rc"
   fi
 
   local wd
@@ -121,6 +129,7 @@ sc_capture_session() {
       rm -rf "$wd"; SC_WORKDIR=""
       return 1
     fi
+    SC_SESSION_SECONDS=$((SC_SESSION_SECONDS + SC_CAPTURE_SECONDS))
     # An empty leg (e.g. paused almost immediately) isn't valid JSON on its
     # own; give sc_merge_runs a well-formed empty document instead.
     if [ -n "$SC_JSON" ]; then

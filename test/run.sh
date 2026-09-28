@@ -230,7 +230,7 @@ ASSESSMENT:
 Not addressed in this session
 
 PLAN:
-Not addressed in this session" "$(printf '%s' "$empty_note" | render soap)"
+The current plan of care will continue." "$(printf '%s' "$empty_note" | render soap)"
 
 assert_eq "render dap: no observations -> the fallback sentence closes Data" \
   "DATA:
@@ -267,6 +267,98 @@ assert_eq "render: the safety plan lists only the parts that were filled in" \
   "The safety plan identified warning signs: skipping meals; and supports: the client's sister (Camila)." \
   "$(printf '%s' "$empty_note" | jq '.safety_plan.warning_signs = ["skipping meals"] | .safety_plan.supports = ["the client'"'"'s sister (Camila)"]' \
      | render soap | sed -n '/^PLAN:/{n;p;}')"
+
+# --- SOAP Objective (lib/structured/objective.jq, sc_splice_objective) ---
+
+SC_ROOT="$here"
+ms='{"mental_status": {"engagement": "engaged and collaborative", "affect": "congruent",
+  "mood": "mildly stressed.", "speech": "clear", "thought_process": "linear",
+  "insight": "improving", "judgment": "intact", "psychomotor": "no psychomotor abnormalities"},
+  "risk": {"status": "not_addressed", "summary": ""}}'
+frame="On time via video. Engaged and collaborative. Affect congruent; mood mildly stressed. Speech clear. Thought process linear. Insight improving; judgment intact. No psychomotor abnormalities."
+
+assert_eq "objective: fills the fixed frame, trimming trailing periods" \
+  "$frame No SI/HI reported." "$(sc_render_objective "$ms" "PLAN: Continue.")"
+assert_eq "objective: a disclosure is named by kind, in fixed words" "$frame SI reported; see Assessment and Plan." \
+  "$(sc_render_objective "$(jq '.risk = {status: "disclosed", summary: "Passive, no plan"} | .risk_kind = "SI"' <<<"$ms")" "x")"
+assert_eq "objective: ...HI too" "$frame SI and HI reported; see Assessment and Plan." \
+  "$(sc_render_objective "$(jq '.risk.status = "disclosed" | .risk_kind = "SI and HI"' <<<"$ms")" "x")"
+assert_eq "objective: disclosed with no usable kind still says so" "$frame Safety risk reported; see Assessment and Plan." \
+  "$(sc_render_objective "$(jq '.risk.status = "disclosed" | .risk_kind = "none"' <<<"$ms")" "x")"
+assert_contains "objective: risk in the note, missed by the pass, blocks \"No SI/HI reported\"" \
+  "$(sc_render_objective "$ms" "The client said everyone would be better off without them.")" \
+  "[The note mentions a safety concern; confirm SI/HI status before signing.]"
+assert_contains "objective: ...self-harm too" \
+  "$(sc_render_objective "$ms" "Reported urges to self-harm.")" "confirm SI/HI status"
+assert_eq "objective: a plain denial in the note is still \"No SI/HI reported\"" "$frame No SI/HI reported." \
+  "$(sc_render_objective "$ms" "The client denied suicidal ideation.")"
+assert_eq "objective: a denial covering two terms is still a denial" "$frame No SI/HI reported." \
+  "$(sc_render_objective "$ms" "There is no indication of self-harm or suicidal ideation.")"
+assert_contains "objective: a denial followed by a disclosure isn't a denial" \
+  "$(sc_render_objective "$ms" "The client denied a plan but reported passive suicidal ideation.")" \
+  "confirm SI/HI status"
+assert_eq "objective: a failed pass is marked, with no SI/HI claim" \
+  "On time via video. [Objective could not be drafted; complete manually.] [SI/HI status not assessed; confirm before signing.]" \
+  "$(sc_render_objective null "x")"
+assert_eq "objective: no client speech leaves it to the clinician, with no SI/HI claim" \
+  "On time via video. [No client speech was captured; complete the Objective manually.] [SI/HI status not assessed; confirm before signing.]" \
+  "$(sc_render_objective '{"no_client": true}' "x")"
+assert_contains "objective: a blank field shows, rather than vanishing" \
+  "$(sc_render_objective "$(jq '.mental_status.affect = ""' <<<"$ms")" "x")" "Affect [not assessed]; mood"
+
+spliced="SUBJECTIVE:
+S.
+
+OBJECTIVE:
+BODY
+
+ASSESSMENT:
+A.
+
+PLAN:
+P."
+assert_eq "splice: replaces the Objective's body" "$spliced" \
+  "$(printf 'SUBJECTIVE:\nS.\n\nOBJECTIVE:\nold\nlines\n\nASSESSMENT:\nA.\n\nPLAN:\nP.\n' | sc_splice_objective BODY)"
+assert_eq "splice: handles header markup, text on the header line, and a second Objective" "$spliced" \
+  "$(printf 'SUBJECTIVE:\nS.\n\n**OBJECTIVE:** old\n\nASSESSMENT:\nA.\n\nOBJECTIVE:\nagain\n\nPLAN:\nP.\n' | sc_splice_objective BODY)"
+assert_eq "splice: inserts a missing Objective before Assessment" "$spliced" \
+  "$(printf 'SUBJECTIVE:\nS.\n\nASSESSMENT:\nA.\n\nPLAN:\nP.\n' | sc_splice_objective BODY)"
+
+assert_eq "default plan: \"Not addressed\" in Plan becomes the plan-of-care sentence" \
+  "A:
+x
+
+PLAN:
+The current plan of care will continue." \
+  "$(printf 'A:\nx\n\nPLAN:\nNot addressed in this session.\n' | sc_default_plan)"
+assert_eq "default plan: so does an empty Plan" "PLAN:
+The current plan of care will continue." "$(printf 'PLAN:\n\n' | sc_default_plan)"
+assert_eq "default plan: a real Plan is left alone" "PLAN:
+Weekly sessions. Not addressed in this session." \
+  "$(printf 'PLAN:\nWeekly sessions. Not addressed in this session.\n' | sc_default_plan)"
+assert_eq "default plan: \"Not addressed\" elsewhere is left alone" "ASSESSMENT:
+Not addressed in this session.
+
+PLAN:
+Continue." "$(printf 'ASSESSMENT:\nNot addressed in this session.\n\nPLAN:\nContinue.\n' | sc_default_plan)"
+
+# --- session line and saved transcripts ----------------------------------
+
+assert_eq "session line: minutes and session type" "63 minutes, telehealth" "$(sc_session_line 63)"
+assert_eq "session line: one minute is singular" "1 minute, telehealth" "$(sc_session_line 1)"
+assert_eq "session line: under a minute doesn't read as zero" "under 1 minute, telehealth" "$(sc_session_line 0)"
+assert_eq "session line: left off when the length is unknown" "NOTE" "$(sc_with_session_line "" NOTE)"
+
+SOAPCAP_SAVE_DIR=$(mktemp -d)/saved
+p1=$(sc_save_transcript "Client: [FIRST_NAME_1] said hi")
+p2=$(sc_save_transcript "second")
+assert_eq "save: writes the transcript" "Client: [FIRST_NAME_1] said hi" "$(cat "$p1")"
+assert_eq "save: readable by this user only" "600" "$(stat -f %Lp "$p1")"
+assert_eq "save: a second save the same minute gets its own file" "second" "$(cat "$p2")"
+assert_contains "save: named so note's file picker finds it" "$p1" ".deid.transcript"
+rm -rf "$(dirname "$SOAPCAP_SAVE_DIR")"
+assert_eq "save: bare Enter at the save prompt means no" "no" \
+  "$(printf '\n' | SOAPCAP_NO_GUM=1 sc_choose "Save?" no yes 2>/dev/null)"
 
 # --- structured style: validation (lib/structured/validate.jq) ----------
 

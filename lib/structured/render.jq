@@ -45,9 +45,13 @@ def plan_sentences:
 
 if $format == "soap" then
   "SUBJECTIVE:\n" + section(.subjective // "")
+  # A placeholder: the Objective is spliced in from its own pass
+  # (lib/structured/objective.jq).
   + "\n\nOBJECTIVE:\n" + presentation
   + "\n\nASSESSMENT:\n" + section(prose([.assessment // "", risk_text]))
-  + "\n\nPLAN:\n" + section(prose([interventions_sentence, safety_plan_sentence, plan_sentences]))
+  # The therapist's Plan always states the plan of care.
+  + "\n\nPLAN:\n" + (prose([interventions_sentence, safety_plan_sentence, plan_sentences])
+                      | if blank then "The current plan of care will continue." else . end)
 elif $format == "dap" then
   "DATA:\n" + prose([.subjective // "", presentation])
   + "\n\nASSESSMENT:\n" + section(prose([.assessment // "", risk_text]))

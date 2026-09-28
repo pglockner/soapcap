@@ -31,7 +31,7 @@ flow_run() {
   shift
   : > "$FLOW_DIR/yap.log"; : > "$FLOW_DIR/curl.log"; : > "$FLOW_DIR/llama.log"; : > "$FLOW_DIR/curl.args"
   : > "$FLOW_DIR/payloads.jsonl"
-  rm -f "$FLOW_DIR/payload.json" "$FLOW_DIR/out" "$FLOW_DIR/err" "$FLOW_DIR/struct.count"
+  rm -f "$FLOW_DIR/payload.json" "$FLOW_DIR/first.json" "$FLOW_DIR/out" "$FLOW_DIR/err" "$FLOW_DIR/struct.count"
 
   # A job started with & from a non-interactive shell begins with SIGINT
   # ignored (so it couldn't trap it); a terminal's Ctrl-C isn't. perl resets
@@ -65,6 +65,9 @@ flow_run() {
   FLOW_LLAMA_LEFT=$(pgrep -f "$FLOW_BIN/llama-server" | wc -l | tr -d ' ')
   pkill -f "$FLOW_BIN/llama-server" 2>/dev/null
   FLOW_OUT=$(cat "$FLOW_DIR/out"); FLOW_ERR=$(cat "$FLOW_DIR/err")
+  # The first request (payload.json holds only the last one): the note
+  # itself, ahead of SOAP's Objective pass.
+  head -n 1 "$FLOW_DIR/payloads.jsonl" > "$FLOW_DIR/first.json"
 }
 
 expected_transcript="Therapist: How have you been sleeping
@@ -110,6 +113,9 @@ assert_contains "live: yap producing nothing is reported" "$FLOW_ERR" "no audio 
 
 # --- note ----------------------------------------------------------------
 
+yesno() { sed 's/true/yes/; s/false/no/'; }
+nreq() { grep -c "$1" "$FLOW_DIR/curl.log" | tr -d ' '; }   # requests to URL pattern
+
 FLOW_STDIN="$FLOW_DIR/transcript.txt"
 printf 'Therapist: hi\nClient: hello\n' > "$FLOW_STDIN"
 
@@ -117,18 +123,79 @@ flow_run none -- note
 assert_contains "note: prints the drafted note" "$FLOW_OUT" "SUBJECTIVE:"
 assert_contains "note: prints the note body" "$FLOW_OUT" "Stub note"
 assert_eq "note: exits 0" "0" "$FLOW_RC"
-assert_eq "note: requests the default model" "llama3.1:8b" "$(jq -r .model "$FLOW_DIR/payload.json")"
-assert_eq "note: asks for a non-streaming response" "false" "$(jq -r .stream "$FLOW_DIR/payload.json")"
+assert_eq "note: requests the default model" "llama3.1:8b" "$(jq -r .model "$FLOW_DIR/first.json")"
+assert_eq "note: asks for a non-streaming response" "false" "$(jq -r .stream "$FLOW_DIR/first.json")"
 assert_eq "note: sends the transcript after the prompt" "yes" \
-  "$(jq -r '.prompt | contains("TRANSCRIPT:\nTherapist: hi\nClient: hello")' "$FLOW_DIR/payload.json" | sed 's/true/yes/; s/false/no/')"
+  "$(jq -r '.prompt | contains("TRANSCRIPT:\nTherapist: hi\nClient: hello")' "$FLOW_DIR/first.json" | sed 's/true/yes/; s/false/no/')"
 assert_eq "note: starts with the SOAP prompt" "$(head -1 "$here/prompts/soap.md")" \
-  "$(jq -r '.prompt | split("\n")[0]' "$FLOW_DIR/payload.json")"
+  "$(jq -r '.prompt | split("\n")[0]' "$FLOW_DIR/first.json")"
 assert_eq "note: sizes num_ctx to at least 4096" "yes" \
-  "$([ "$(jq -r .options.num_ctx "$FLOW_DIR/payload.json")" -ge 4096 ] && echo yes || echo no)"
+  "$([ "$(jq -r .options.num_ctx "$FLOW_DIR/first.json")" -ge 4096 ] && echo yes || echo no)"
+
+assert_eq "note: unloads the Ollama model once the note is done" "unload llama3.1:8b" \
+  "$(tail -n 1 "$FLOW_DIR/curl.log")"
+assert_eq "note: ...only once, after both passes" "1" "$(grep -c '^unload' "$FLOW_DIR/curl.log" | tr -d ' ')"
 
 flow_run none -- note --format dap
 assert_eq "note --format dap: uses the DAP prompt" "$(head -1 "$here/prompts/dap.md")" \
   "$(jq -r '.prompt | split("\n")[0]' "$FLOW_DIR/payload.json")"
+assert_eq "note --format dap: no Objective pass" "1" "$(wc -l < "$FLOW_DIR/payloads.jsonl" | tr -d ' ')"
+assert_not_contains "note --format dap: no mental-status frame" "$FLOW_OUT" "On time via video"
+
+# --- note: SOAP's Objective pass -----------------------------------------
+
+objective="OBJECTIVE:
+On time via video. Stub engaged. Affect stub affect; mood stub mood. Speech stub speech. Thought process stub thought. Insight stub insight; judgment stub judgment. Stub psychomotor."
+
+flow_run none -- note
+assert_eq "objective: SOAP is two requests, the note first" "no yes" \
+  "$(jq -r 'has("format")' "$FLOW_DIR/payloads.jsonl" | yesno | tr '\n' ' ' | sed 's/ $//')"
+assert_eq "objective: the second request asks for the mental-status fields" "mental_status risk risk_kind" \
+  "$(jq -r '.format.required | join(" ")' "$FLOW_DIR/payload.json")"
+assert_eq "objective: its prompt is the Objective prompt" "$(head -1 "$here/prompts/objective.md")" \
+  "$(jq -r '.prompt | split("\n")[0]' "$FLOW_DIR/payload.json")"
+assert_eq "objective: its prompt carries the transcript" "yes" \
+  "$(jq -r '.prompt | contains("TRANSCRIPT:\nTherapist: hi\nClient: hello")' "$FLOW_DIR/payload.json" | yesno)"
+assert_contains "objective: the frame is filled in from the pass" "$FLOW_OUT" "$objective No SI/HI reported.
+
+ASSESSMENT:"
+assert_not_contains "objective: the narrative's own Objective is replaced" "$FLOW_OUT" "No observable presentation"
+assert_eq "objective: no session line without --duration" "SUBJECTIVE:" "$(printf '%s\n' "$FLOW_OUT" | head -n 1)"
+
+flow_run none STUB_OBJ_RISK=disclosed -- note
+assert_contains "objective: a disclosed risk replaces the SI/HI line" "$FLOW_OUT" "$objective HI reported; see Assessment and Plan."
+assert_not_contains "objective: ...and \"No SI/HI reported\" never appears" "$FLOW_OUT" "No SI/HI reported"
+
+flow_run none STUB_OBJ_RISK=screened_negative -- note
+assert_contains "objective: a negative screen reads \"No SI/HI reported\"" "$FLOW_OUT" "No SI/HI reported."
+
+flow_run none STUB_OBJ_MODE=invalid -- note
+assert_eq "objective: a failed pass still delivers the note" "0" "$FLOW_RC"
+assert_contains "objective: ...says the Objective needs completing" "$FLOW_OUT" "[Objective could not be drafted; complete manually.]"
+assert_not_contains "objective: ...and never claims no SI/HI" "$FLOW_OUT" "No SI/HI reported"
+assert_contains "objective: ...and warns on stderr" "$FLOW_ERR" "the Objective pass failed"
+
+printf 'Therapist: just me talking\n' > "$FLOW_DIR/mic-only.txt"
+FLOW_STDIN="$FLOW_DIR/mic-only.txt" flow_run none -- note
+assert_eq "objective: no client lines, no Objective pass" "1" "$(nreq /api/generate)"
+assert_contains "objective: ...Objective is left to the clinician" "$FLOW_OUT" \
+  "[No client speech was captured; complete the Objective manually.]"
+assert_not_contains "objective: ...with no SI/HI claim" "$FLOW_OUT" "No SI/HI reported"
+assert_contains "objective: ...and says why" "$FLOW_ERR" "no Client lines in the transcript"
+
+flow_run none -- note --duration 63
+assert_eq "duration: --duration puts the session line first" "63 minutes, telehealth" \
+  "$(printf '%s\n' "$FLOW_OUT" | head -n 1)"
+assert_eq "duration: then a blank line, then the note" "
+SUBJECTIVE:" "$(printf '%s\n' "$FLOW_OUT" | sed -n '2,3p')"
+
+flow_run none SOAPCAP_SESSION_TYPE="in person" -- note --duration 1
+assert_eq "duration: one minute, and the session type is configurable" "1 minute, in person" \
+  "$(printf '%s\n' "$FLOW_OUT" | head -n 1)"
+
+flow_run none -- note --duration 1h
+assert_eq "duration: anything but whole minutes is refused" "1" "$FLOW_RC"
+assert_eq "duration: ...before any request" "" "$(cat "$FLOW_DIR/curl.log")"
 
 flow_run none -- note --model other:1b
 assert_contains "note: an unpulled model is reported" "$FLOW_ERR" "is not pulled"
@@ -153,11 +220,14 @@ assert_contains "bonsai: server loads the configured model" "$(cat "$FLOW_DIR/ll
 assert_eq "bonsai: server is stopped after the note" "stopped" "$(tail -n 1 "$FLOW_DIR/llama.log")"
 assert_eq "bonsai: no server left running" "0" "$FLOW_LLAMA_LEFT"
 assert_eq "bonsai: thinking is turned off" "false" \
-  "$(jq -r .chat_template_kwargs.enable_thinking "$FLOW_DIR/payload.json")"
+  "$(jq -r .chat_template_kwargs.enable_thinking "$FLOW_DIR/first.json")"
 assert_eq "bonsai: tested sampling settings" "0.7 0.8 20 2000" \
-  "$(jq -r '"\(.temperature) \(.top_p) \(.top_k) \(.max_tokens)"' "$FLOW_DIR/payload.json")"
+  "$(jq -r '"\(.temperature) \(.top_p) \(.top_k) \(.max_tokens)"' "$FLOW_DIR/first.json")"
 assert_eq "bonsai: sends the SOAP prompt and transcript as one user message" "yes" \
-  "$(jq -r '.messages | length == 1 and .[0].role == "user" and (.[0].content | contains("TRANSCRIPT:\nTherapist: hi"))' "$FLOW_DIR/payload.json" | sed 's/true/yes/; s/false/no/')"
+  "$(jq -r '.messages | length == 1 and .[0].role == "user" and (.[0].content | contains("TRANSCRIPT:\nTherapist: hi"))' "$FLOW_DIR/first.json" | sed 's/true/yes/; s/false/no/')"
+assert_eq "bonsai: one server start for the note and its Objective" "1" \
+  "$(grep -c '^started' "$FLOW_DIR/llama.log" | tr -d ' ')"
+assert_contains "bonsai: the Objective pass is filled in" "$FLOW_OUT" "On time via video. Stub engaged."
 
 flow_run none SOAPCAP_BONSAI_SERVER=/nonexistent/llama-server -- note --model bonsai
 assert_eq "bonsai: not set up exits non-zero" "1" "$FLOW_RC"
@@ -199,20 +269,22 @@ assert_eq "note: a down Ollama exits non-zero" "1" "$FLOW_RC"
 
 flow_run none STUB_OLLAMA_MODE=error -- note
 assert_contains "note: an Ollama error message is surfaced" "$FLOW_ERR" "Ollama error: boom"
+assert_eq "note: a failed draft still unloads the model" "unload llama3.1:8b" "$(tail -n 1 "$FLOW_DIR/curl.log")"
 
 flow_run none STUB_OLLAMA_MODE=empty -- note
 assert_contains "note: an empty response is reported" "$FLOW_ERR" "no content"
 
 # --- note --style --------------------------------------------------------
 
-yesno() { sed 's/true/yes/; s/false/no/'; }
-nreq() { grep -c "$1" "$FLOW_DIR/curl.log" | tr -d ' '; }   # requests to URL pattern
-soap_fields="subjective objective_observations assessment risk safety_plan interventions_used plan_items"
+soap_fields="subjective assessment risk safety_plan interventions_used plan_items"
 
 flow_run none -- note
 assert_eq "style: the narrative request carries no schema" "no" \
-  "$(jq -r 'has("format") or has("response_format")' "$FLOW_DIR/payload.json" | yesno)"
-assert_eq "style: narrative is a single request" "1" "$(nreq /api/generate)"
+  "$(jq -r 'has("format") or has("response_format")' "$FLOW_DIR/first.json" | yesno)"
+assert_eq "style: narrative SOAP is the note plus its Objective" "2" "$(nreq /api/generate)"
+
+flow_run none -- note --format birp
+assert_eq "style: narrative BIRP is a single request" "1" "$(nreq /api/generate)"
 
 flow_run none -- note --style bogus
 assert_eq "style: an unknown style exits non-zero" "1" "$FLOW_RC"
@@ -226,8 +298,8 @@ flow_run none -- note --style structured
 assert_eq "structured: exits 0" "0" "$FLOW_RC"
 assert_contains "structured: Subjective comes from the JSON" "$FLOW_OUT" "SUBJECTIVE:
 Stub structured subjective."
-assert_contains "structured: observations become Objective" "$FLOW_OUT" "OBJECTIVE:
-Stub observation."
+assert_contains "structured: SOAP's Objective comes from its own pass" "$FLOW_OUT" "OBJECTIVE:
+On time via video. Stub engaged."
 assert_contains "structured: risk is added to Assessment" "$FLOW_OUT" \
   "Stub structured assessment. Stub risk summary."
 assert_contains "structured: interventions open Plan" "$FLOW_OUT" \
@@ -240,17 +312,17 @@ assert_contains "structured: next steps are composed into Plan" "$FLOW_OUT" \
 assert_not_contains "structured: no JSON reaches the note" "$FLOW_OUT" "{"
 assert_contains "structured: the review goes to stderr" "$FLOW_ERR" "review: nothing flagged"
 assert_not_contains "structured: the review stays out of the note" "$FLOW_OUT" "nothing flagged"
-assert_eq "structured: sends Ollama a schema" "object" "$(jq -r .format.type "$FLOW_DIR/payload.json")"
+assert_eq "structured: sends Ollama a schema" "object" "$(jq -r .format.type "$FLOW_DIR/first.json")"
 assert_eq "structured: the SOAP schema's fields, in note order" "$soap_fields" \
-  "$(jq -r '.format.required | join(" ")' "$FLOW_DIR/payload.json")"
+  "$(jq -r '.format.required | join(" ")' "$FLOW_DIR/first.json")"
 assert_eq "structured: tested sampling, and an output cap" "0.3 0.8 20 3000" \
-  "$(jq -r '.options | "\(.temperature) \(.top_p) \(.top_k) \(.num_predict)"' "$FLOW_DIR/payload.json")"
+  "$(jq -r '.options | "\(.temperature) \(.top_p) \(.top_k) \(.num_predict)"' "$FLOW_DIR/first.json")"
 assert_eq "structured: the context fits the prompt plus the output cap" "yes" \
-  "$(jq -r '.options.num_ctx - .options.num_predict >= (.prompt | split(" ") | length)' "$FLOW_DIR/payload.json" | yesno)"
+  "$(jq -r '.options.num_ctx - .options.num_predict >= (.prompt | split(" ") | length)' "$FLOW_DIR/first.json" | yesno)"
 assert_eq "structured: the transcript goes with numbered lines" "yes" \
-  "$(jq -r '.prompt | contains("TRANSCRIPT:\n1 | Therapist: hi\n2 | Client: hello")' "$FLOW_DIR/payload.json" | yesno)"
+  "$(jq -r '.prompt | contains("TRANSCRIPT:\n1 | Therapist: hi\n2 | Client: hello")' "$FLOW_DIR/first.json" | yesno)"
 assert_eq "structured: the prompt names the format" "yes" \
-  "$(jq -r '.prompt | split("\n")[0] | endswith("drafting a clinical SOAP")' "$FLOW_DIR/payload.json" | yesno)"
+  "$(jq -r '.prompt | split("\n")[0] | endswith("drafting a clinical SOAP")' "$FLOW_DIR/first.json" | yesno)"
 
 flow_run none -- note --style structured --format dap
 assert_contains "structured dap: Data holds reported content and observations" "$FLOW_OUT" \
@@ -270,7 +342,7 @@ assert_eq "structured birp: the BIRP schema's fields, in note order" \
   "subjective objective_observations interventions_used response risk safety_plan plan_items" \
   "$(jq -r '.format.required | join(" ")' "$FLOW_DIR/payload.json")"
 
-flow_run none STUB_STRUCT_MODE=invalid_once -- note --style structured
+flow_run none STUB_STRUCT_MODE=invalid_once -- note --style structured --format dap
 assert_eq "structured: one malformed response is retried" "0" "$FLOW_RC"
 assert_contains "structured: the retry is announced" "$FLOW_ERR" "retrying once"
 assert_eq "structured: the retry is a second request" "2" "$(nreq /api/generate)"
@@ -289,9 +361,13 @@ assert_contains "structured bonsai: renders the note" "$FLOW_OUT" "Stub structur
 assert_eq "structured bonsai: sends a JSON schema" "json_schema" \
   "$(jq -r .response_format.type "$FLOW_DIR/payload.json")"
 assert_eq "structured bonsai: tested sampling, and an output cap" "0.3 0.8 20 3000" \
-  "$(jq -r '"\(.temperature) \(.top_p) \(.top_k) \(.max_tokens)"' "$FLOW_DIR/payload.json")"
+  "$(jq -r '"\(.temperature) \(.top_p) \(.top_k) \(.max_tokens)"' "$FLOW_DIR/first.json")"
+assert_eq "structured bonsai: the Objective pass has a smaller cap" "600" \
+  "$(jq -r .max_tokens "$FLOW_DIR/payload.json")"
+assert_eq "structured bonsai: the Objective fields are length-capped" "100" \
+  "$(jq -r .response_format.json_schema.schema.properties.mental_status.properties.affect.maxLength "$FLOW_DIR/payload.json")"
 assert_eq "structured bonsai: thinking is turned off" "false" \
-  "$(jq -r .chat_template_kwargs.enable_thinking "$FLOW_DIR/payload.json")"
+  "$(jq -r .chat_template_kwargs.enable_thinking "$FLOW_DIR/first.json")"
 assert_eq "structured bonsai: server is stopped after the note" "stopped" "$(tail -n 1 "$FLOW_DIR/llama.log")"
 assert_eq "structured bonsai: no server left running" "0" "$FLOW_LLAMA_LEFT"
 
@@ -299,12 +375,12 @@ flow_run none -- note --style combined
 assert_eq "combined: exits 0" "0" "$FLOW_RC"
 assert_contains "combined: prints the narrative note" "$FLOW_OUT" "Stub note"
 assert_not_contains "combined: the structured draft isn't the note" "$FLOW_OUT" "Stub structured"
-assert_eq "combined: two requests" "2" "$(wc -l < "$FLOW_DIR/payloads.jsonl" | tr -d ' ')"
-assert_eq "combined: the first is the narrative request, the second the check" "no yes" \
+assert_eq "combined: three requests for SOAP" "3" "$(wc -l < "$FLOW_DIR/payloads.jsonl" | tr -d ' ')"
+assert_eq "combined: the narrative note, the check, then the Objective" "no yes yes" \
   "$(jq -r 'has("format")' "$FLOW_DIR/payloads.jsonl" | yesno | tr '\n' ' ' | sed 's/ $//')"
+assert_eq "combined: the check is the full structured pass" "$soap_fields" \
+  "$(sed -n 2p "$FLOW_DIR/payloads.jsonl" | jq -r '.format.required | join(" ")')"
 assert_contains "combined: shows a review" "$FLOW_ERR" "review before submitting"
-assert_contains "combined: flags an Objective that missed a reaction" "$FLOW_ERR" \
-  "Objective says there were no observable reactions, but the transcript has one at line 1 (Therapist)"
 assert_contains "combined: flags undocumented risk" "$FLOW_ERR" \
   "A safety risk came up in the session, but the note doesn't mention it"
 assert_contains "combined: lists next steps with their lines" "$FLOW_ERR" "line 2: do a stub task"
@@ -323,7 +399,7 @@ flow_run none "${BONSAI_ENV[@]}" STUB_OLLAMA_MODE=down -- note --model bonsai --
 assert_eq "combined bonsai: exits 0" "0" "$FLOW_RC"
 assert_contains "combined bonsai: prints the narrative note" "$FLOW_OUT" "Bonsai stub note"
 assert_eq "combined bonsai: one server start for both passes" "1" "$(grep -c '^started' "$FLOW_DIR/llama.log" | tr -d ' ')"
-assert_eq "combined bonsai: two requests to it" "2" "$(nreq /v1/chat/completions)"
+assert_eq "combined bonsai: three requests to it" "3" "$(nreq /v1/chat/completions)"
 assert_eq "combined bonsai: the narrative pass keeps its tested settings" "0.7 2000 false" \
   "$(head -1 "$FLOW_DIR/payloads.jsonl" | jq -r '"\(.temperature) \(.max_tokens) \(has("response_format"))"')"
 assert_eq "combined bonsai: server is stopped after both passes" "stopped" "$(tail -n 1 "$FLOW_DIR/llama.log")"
@@ -343,6 +419,9 @@ FLOW_STDIN=""
 flow_run TERM -- session --format soap
 assert_contains "session: prints the transcript" "$FLOW_OUT" "Client: Not great this week"
 assert_contains "session: prints the drafted note" "$FLOW_OUT" "Stub note"
+assert_contains "session: the note opens with recording time and session type" "$FLOW_OUT" "under 1 minute, telehealth
+
+SUBJECTIVE:"
 assert_eq "session: exits 0" "0" "$FLOW_RC"
 assert_not_contains "session: no alternate-screen codes when output isn't a terminal" \
   "$FLOW_OUT$FLOW_ERR" "$(printf '\033[?1049h')"

@@ -18,6 +18,10 @@ def norm:
 # between two real quotes as one bogus span.
 def quotes: [scan("[\"“]([^\"“”]*)[\"”]") | .[0] | select(length >= 4)];
 
+# Words in a note that suggest a safety risk was documented. Matched
+# against norm'd text, so "self-harm" arrives as "selfharm".
+def risk_pattern: "suicid|homicid|self harm|selfharm|harm (themself|themselves|himself|herself|others|someone)|better off|safety plan|988|crisis";
+
 def fallback: "No observable presentation details available from a text-only transcript.";
 
 # Tidy a model phrase so it fits mid-sentence: trim, drop trailing
