@@ -342,6 +342,28 @@ Not addressed in this session.
 PLAN:
 Continue." "$(printf 'ASSESSMENT:\nNot addressed in this session.\n\nPLAN:\nContinue.\n' | sc_default_plan)"
 
+# --- sc_show: word-wrap for the terminal only ---------------------------
+
+# script(1) gives sc_show a real terminal 30 columns wide -- with a stale
+# COLUMNS=80 in the environment, which must not win; script prefixes its
+# output with ^D and two backspaces, and ends lines in \r\n.
+# shellcheck disable=SC1112  # the curly quotes are the point of the test
+para='The client reported a difficult week — “I’m exhausted,” they said — with work and caregiving demands.'
+# shellcheck disable=SC2016  # $1/$2 belong to the inner bash
+shown=$(COLUMNS=80 script -q /dev/null bash -c 'stty cols 30; . "$1/lib/common.sh"; sc_show "$2"' _ "$here" "$para" </dev/null \
+  | LC_ALL=C sed -e $'s/^\\^D\b\b//' -e 's/\r$//' | sed '/^$/d')
+widest=0
+while IFS= read -r l; do
+  n=$(LC_ALL=en_US.UTF-8 bash -c 'printf %s "${#1}"' _ "$l")
+  [ "$n" -gt "$widest" ] && widest=$n
+done <<<"$shown"
+assert_eq "sc_show: on a terminal, it wraps (more than one line)" "yes" \
+  "$([ "$(printf '%s\n' "$shown" | wc -l | tr -d ' ')" -gt 1 ] && echo yes || echo no)"
+assert_eq "sc_show: ...every line fits the terminal's width" "yes" "$([ "$widest" -le 30 ] && echo yes || echo no)"
+assert_eq "sc_show: ...wrapping at spaces, never inside a word" "$para" \
+  "$(printf '%s\n' "$shown" | sed 's/ $//' | paste -sd ' ' -)"
+assert_eq "sc_show: not a terminal, printed unchanged" "$para" "$(sc_show "$para" | cat)"
+
 # --- session line and saved transcripts ----------------------------------
 
 assert_eq "session line: minutes and session type" "63 minutes, telehealth" "$(sc_session_line 63)"

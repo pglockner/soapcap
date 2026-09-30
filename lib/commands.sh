@@ -1115,7 +1115,7 @@ sc_cmd_note() {
     printf '%s\n' "$note" > "$out"
     sc_info "note written to: $out  (contains PHI — delete when done)"
   else
-    printf '%s\n' "$note"
+    sc_show "$note"
   fi
   [ -n "$SC_REVIEW" ] && sc_info "$SC_REVIEW"
   [ "$clipboard" -eq 1 ] && sc_to_clipboard "$note"
@@ -1377,7 +1377,7 @@ sc_cmd_session() {
   if [ "$show_transcript" -eq 1 ]; then
     sc_info ""
     sc_info "----- transcript -----"
-    printf '%s\n' "$transcript"
+    sc_show "$transcript"
     sc_info "-----------------------"
   fi
 
@@ -1424,7 +1424,7 @@ sc_cmd_session() {
         SC_NOTE=$(sc_with_session_line "$minutes" "$SC_NOTE")
         sc_info ""
         sc_info "----- $format note -----"
-        printf '%s\n' "$SC_NOTE"
+        sc_show "$SC_NOTE"
         sc_info "-------------------------"
         [ -n "$SC_REVIEW" ] && sc_info "$SC_REVIEW"
         if [ -t 0 ]; then

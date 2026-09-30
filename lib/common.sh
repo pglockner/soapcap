@@ -132,6 +132,25 @@ sc_alt_screen_stop() {
   return 0
 }
 
+# sc_show TEXT — prints TEXT to stdout, word-wrapped to the terminal's width
+# when stdout is a terminal, and unchanged otherwise (a pipe, a redirect).
+# Display only: callers keep TEXT itself unwrapped for --out and the
+# clipboard, so a pasted note keeps one line per paragraph.
+sc_show() {
+  # The width comes from the terminal itself (stty on /dev/tty): tput trusts
+  # a COLUMNS variable over it, and a stale one wrapped at 80 in a wider pane.
+  local w=0
+  if [ -t 1 ]; then
+    w=$(stty size </dev/tty 2>/dev/null | awk '{print $2}')
+    [ "${w:-0}" -gt 0 ] 2>/dev/null || w=$(tput cols 2>/dev/null)
+  fi
+  if [ "${w:-0}" -ge 20 ] 2>/dev/null; then
+    printf '%s\n' "$1" | fold -s -w "$w"
+  else
+    printf '%s\n' "$1"
+  fi
+}
+
 # sc_to_clipboard TEXT — best-effort copy to the macOS clipboard via pbcopy.
 # Note this is another place PHI can linger: most clipboard managers keep
 # history. See README "Retention".
