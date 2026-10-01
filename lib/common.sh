@@ -202,7 +202,11 @@ sc_confirm() {
 sc_choose() {
   local header="$1"; shift
   if [ -z "${SOAPCAP_NO_GUM:-}" ] && command -v gum >/dev/null 2>&1; then
-    gum choose --header "$header" "$@"
+    local picked
+    picked=$(gum choose --header "$header" "$@") || true
+    # Esc/Ctrl-C prints nothing: fall back to the first option, as the
+    # plain prompt does on bare Enter, rather than handing back "".
+    printf '%s\n' "${picked:-$1}"
     return
   fi
   local opt lc seen=" " unique=1

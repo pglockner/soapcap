@@ -273,7 +273,8 @@ note is done.
 | `llama3.1:8b` | ~5GB | **Default.** Fast: 1–2 minutes a SOAP note. Often assigns a pronoun from the client's name and gets details wrong. Proofread pronouns and facts. |
 | `bonsai` | ~6GB (16GB+ Mac) | Bonsai 2 27B, a ternary-weight model from PrismML. Slower (4–8 minutes a SOAP note), and it uses most of a 16GB Mac's memory while it runs. More accurate, and keeps pronouns neutral. Still proofread it. |
 
-**`soapcap model`** shows both with their live status and lets you pick
+**`soapcap model`** shows both with their live status, plus any other
+model you've already pulled into Ollama (marked untested), and lets you pick
 one as the default for `session`/`note` (pulling `llama3.1:8b` via Ollama
 if needed). `--model` still overrides it per run. The authoritative list
 is [`sc_model_catalog`](lib/commands.sh).
@@ -413,7 +414,10 @@ it looks like a full-screen app and clears when you press Enter at the end.
    you're done.
 2. **Show the transcript?**
 3. **Draft a note from this?** (worded "Draft a de-identified note…" if you
-   said yes to step 1), then **Format?** (soap, dap, birp).
+   said yes to step 1), then **Format?** (soap, dap, birp), then **Model
+   for the note?** — every installed model (pulled Ollama models, plus Bonsai if set up), with your default first. Only
+   asked when more than one is installed and `--model` wasn't given; the
+   pick applies to this session only (`soapcap model` changes the default).
 4. **This draft: keep / regenerate / discard.** `regenerate` drafts again
    with the same model and transcript; `discard` ends with no note. `keep`
    copies the note to the clipboard. The note opens with the session line

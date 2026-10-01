@@ -166,6 +166,19 @@ sc_bonsai_installed() {
   [ -x "$SOAPCAP_BONSAI_SERVER" ] && [ -f "$SOAPCAP_BONSAI_GGUF" ]
 }
 
+# sc_installed_models HOST DEFAULT — prints the tags that are ready to use
+# right now, one per line, DEFAULT first (so bare Enter keeps it): DEFAULT
+# itself, Bonsai if it's set up, then every model pulled into Ollama
+# (tested or not).
+sc_installed_models() {
+  local host="$1" default="$2" tag
+  {
+    printf '%s\n' "$default"
+    sc_bonsai_installed && printf 'bonsai\n'
+    curl -s --max-time 3 "$host/api/tags" 2>/dev/null | jq -r '.models[]?.name // empty' 2>/dev/null
+  } | awk 'NF && !seen[$0]++'
+}
+
 # sc_model_table HOST — prints sc_model_catalog as an aligned, wrapped
 # table (~86 columns) with a live STATUS column, one line at a time to
 # stdout for the caller to route through sc_info.
@@ -187,6 +200,16 @@ sc_model_table() {
     done <<CATALOG
 $(sc_model_catalog)
 CATALOG
+    # Anything else pulled into Ollama: usable, just untested.
+    local gb
+    while IFS=$'\t' read -r tag gb; do
+      [ -z "$tag" ] && continue
+      sc_model_catalog | cut -d'|' -f1 | grep -qx "$tag" && continue
+      printf '%s\t~%sGB\tpulled\tUntested with soapcap'"'"'s prompts — proofread its notes closely.\n' \
+        "$tag" "$(awk -v b="$gb" 'BEGIN { printf "%.0f", b / 1e9 }')"
+    done <<EXTRAS
+$(curl -s --max-time 3 "$host/api/tags" 2>/dev/null | jq -r '.models[]? | "\(.name)\t\(.size)"' 2>/dev/null)
+EXTRAS
   } | awk -F'\t' -v tagw=13 -v sizew=17 -v statw=11 -v notew=42 '
     function pad(s, w) { return sprintf("%-" w "s", s) }
     BEGIN {
@@ -249,7 +272,7 @@ sc_cmd_model() {
 $(sc_model_table "$host")
 TABLE
   sc_info ""
-  sc_info "Other Ollama models work too, untested — see 'soapcap help' (OTHER MODELS)."
+  sc_info "Models not in the tested list work too, untested — see 'soapcap help' (OTHER MODELS)."
   sc_info ""
 
   [ -t 0 ] || return 0
@@ -264,9 +287,22 @@ TABLE
   done <<CATALOG
 $(sc_model_catalog)
 CATALOG
+  # Plus every other model already pulled into Ollama (untested).
+  while IFS= read -r tag; do
+    [ -z "$tag" ] && continue
+    case " ${tags[*]} " in *" $tag "*) continue ;; esac
+    tags+=("$tag")
+  done <<PULLED
+$(curl -s --max-time 3 "$host/api/tags" 2>/dev/null | jq -r '.models[]?.name // empty' 2>/dev/null)
+PULLED
 
   local chosen
   chosen=$(sc_choose "Pick a model:" "${tags[@]}")
+
+  if [ "$chosen" = "$SOAPCAP_MODEL" ]; then
+    sc_info "Default unchanged ($SOAPCAP_MODEL)."
+    return 0
+  fi
 
   if [ "$chosen" = bonsai ]; then
     if ! sc_bonsai_installed; then
@@ -1288,7 +1324,7 @@ sc_save_transcript() {
 sc_cmd_session() {
   local mic="$SOAPCAP_MIC_LABEL" sys="$SOAPCAP_SYSTEM_LABEL" locale="$SOAPCAP_LOCALE"
   local dedupe=1 format="" model="$SOAPCAP_MODEL" host="$SOAPCAP_OLLAMA_HOST"
-  local style="$SOAPCAP_STYLE" no_note=0 clipboard=0
+  local style="$SOAPCAP_STYLE" no_note=0 clipboard=0 model_given=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --mic-label)    mic="${2:?}"; shift 2 ;;
@@ -1297,7 +1333,7 @@ sc_cmd_session() {
       --no-dedupe)    dedupe=0; shift ;;
       --format)       format="${2:?}"; shift 2 ;;
       --style)        style="${2:?}"; shift 2 ;;
-      --model)        model="${2:?}"; shift 2 ;;
+      --model)        model="${2:?}"; model_given=1; shift 2 ;;
       --host)         host="${2:?}"; shift 2 ;;
       --no-note)      no_note=1; shift ;;
       --clipboard)    clipboard=1; shift ;;
@@ -1407,6 +1443,19 @@ sc_cmd_session() {
 
   if [ "$want_note" -eq 1 ]; then
     sc_need curl
+    # Which model drafts the note: asked only on a real terminal, when
+    # --model didn't already say, and when there's an actual choice. The
+    # pick applies to this session only; 'soapcap model' sets the default.
+    if [ -t 0 ] && [ "$model_given" -eq 0 ]; then
+      local installed=() m
+      while IFS= read -r m; do installed+=("$m"); done <<MODELS
+$(sc_installed_models "$host" "$model")
+MODELS
+      if [ "${#installed[@]}" -gt 1 ]; then
+        sc_info ""
+        model=$(sc_choose "Model for the note?" "${installed[@]}")
+      fi
+    fi
     local keep_note=0 note_choice
     while [ "$keep_note" -eq 0 ]; do
       sc_info ""
