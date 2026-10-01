@@ -83,6 +83,18 @@ case "$url" in
     printf '{"models":[{"name":"%s"}]}' "${STUB_OLLAMA_MODEL:-llama3.1:8b}" ;;
   */api/generate)
     [ "$mode" = down ] && exit 7
+    # A streaming request gets its reply as NDJSON, split in two, with
+    # done_reason only on the last chunk, as Ollama sends it.
+    if printf '%s' "$payload" | jq -e '.stream == true' >/dev/null 2>&1; then
+      emit() {
+        local body
+        body=$(printf '%s' "$1" | jq -c 'if has("response") then
+            (.response | length / 2 | floor) as $n
+            | ({response: .response[:$n]}, (. + {response: .response[$n:], done: true}))
+          else . end')
+        if [ -n "$out" ]; then printf '%s\n' "$body" > "$out"; else printf '%s\n' "$body"; fi
+      }
+    fi
     case "$mode" in
       error) emit '{"error":"boom"}' ;;
       empty) emit '{"response":""}' ;;

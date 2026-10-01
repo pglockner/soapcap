@@ -545,30 +545,59 @@ sc_mem_pct() {
   echo $(( 100 - free + ${swap:-0} * 1048576 * 100 / total ))
 }
 
-# sc_status_line TITLE SECONDS SPINNER — prints one redraw of the drafting
-# status line to stderr: spinner, title, elapsed time, and memory in use,
-# green below 75%, yellow to 90%, red above.
+# sc_swap_info — prints "PERCENT GB" for swap in use (e.g. "42 2.1"), or
+# nothing when there is no swap file yet. macOS grows swap on demand, so
+# the percentage is of the swap file as it stands now.
+sc_swap_info() {
+  sysctl -n vm.swapusage 2>/dev/null | awk '
+    function mb(v,  u) { u = substr(v, length(v)); sub(/[MG]$/, "", v); return u == "G" ? v * 1024 : v }
+    { for (i = 1; i < NF; i++) {
+        if ($i == "total") t = mb($(i+2))
+        if ($i == "used")  u = mb($(i+2)) } }
+    END { if (t > 0) printf "%d %.1f\n", u * 100 / t, u / 1024 }'
+}
+
+# sc_status_line TITLE SECONDS SPINNER [PROGRESS] — prints one redraw of
+# the drafting status line to stderr: spinner, title, elapsed time, PROGRESS
+# (e.g. a token count) if given, and memory in use, green below 75%, yellow
+# to 90%, red above. From 90% it adds swap in use, which is what pushes the
+# memory figure up.
 sc_status_line() {
-  local mem color="" reset=$'\033[0m'
+  local mem color="" reset=$'\033[0m' swap="" progress=""
+  [ -n "${4:-}" ] && progress="   $4"
   mem=$(sc_mem_pct)
   if [ -n "$mem" ]; then
-    if [ "$mem" -ge 90 ]; then color=$'\033[31m'
+    if [ "$mem" -ge 90 ]; then
+      color=$'\033[31m'
+      local sw
+      sw=$(sc_swap_info)
+      [ -n "$sw" ] && swap="   ${color}swap ${sw% *}% (${sw#* }GB)${reset}"
     elif [ "$mem" -ge 75 ]; then color=$'\033[33m'
     else color=$'\033[32m'; fi
     mem="   ${color}memory ${mem}%${reset}"
   fi
-  printf '\r\033[K%s %s  %d:%02d%s' "$3" "$1" $(($2 / 60)) $(($2 % 60)) "$mem" >&2
+  printf '\r\033[K%s %s  %d:%02d%s%s%s' "$3" "$1" $(($2 / 60)) $(($2 % 60)) "$progress" "$mem" "$swap" >&2
 }
 
-# sc_spin_post TITLE URL PAYLOAD OUTFILE MAX_SECONDS — POSTs PAYLOAD as JSON
-# to URL, response body to OUTFILE. Returns curl's own exit status. On a
+# sc_token_progress TOKENS SECONDS_SINCE_FIRST — "412 tokens, 18 tok/s".
+# The rate runs from the first token, so reading a long transcript doesn't
+# drag it down, and appears once there are 2+ seconds to measure.
+sc_token_progress() {
+  if [ "$2" -ge 2 ]; then printf '%s tokens, %s tok/s\n' "$1" $(($1 / $2))
+  else printf '%s tokens\n' "$1"; fi
+}
+
+# sc_spin_post TITLE URL PAYLOAD OUTFILE MAX_SECONDS [COUNT] — POSTs PAYLOAD
+# as JSON to URL, response body to OUTFILE. With COUNT set, the response is
+# Ollama's streamed NDJSON (one line per generated token) and the status
+# line shows a live token count and rate. Returns curl's own exit status. On a
 # terminal it shows a status line, redrawn every second, with elapsed time
 # and memory in use (a large model can push a 16GB Mac into swap);
 # otherwise, e.g. under the window app, just the title. PAYLOAD holds the
 # transcript, so it goes to curl from a private temp file rather than as
 # an argument, where any local process could read it with `ps`.
 sc_spin_post() {
-  local title="$1" url="$2" payload="$3" out="$4" max="$5" body rc
+  local title="$1" url="$2" payload="$3" out="$4" max="$5" count="${6:-}" body rc
   sc_tmpfile body || return 1
   printf '%s' "$payload" > "$body"
   [ -t 2 ] || sc_info "$title"
@@ -587,17 +616,42 @@ sc_spin_post() {
     # An array, not a string sliced per character: slicing counts bytes
     # outside a UTF-8 locale and would split these.
     local t0=$SECONDS i=0 frames=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
+    local tokens=0 t_first="" progress=""
     while kill -0 "$cpid" 2>/dev/null; do
-      sc_status_line "$title" $((SECONDS - t0)) "${frames[$((i % 10))]}"
+      progress=""
+      if [ -n "$count" ]; then
+        tokens=$(wc -l < "$out" 2>/dev/null | tr -d ' ')
+        if [ "${tokens:-0}" -gt 0 ]; then
+          [ -n "$t_first" ] || t_first=$SECONDS
+          progress=$(sc_token_progress "$tokens" $((SECONDS - t_first)))
+        fi
+      fi
+      sc_status_line "$title" $((SECONDS - t0)) "${frames[$((i % 10))]}" "$progress"
       i=$((i + 1))
       # `wait` on a background sleep, not a foreground one, so a signal is
       # still acted on at once.
       sleep 1 & wait $! 2>/dev/null
     done
-    printf '\r\033[K' >&2
+    wait "$cpid"
+    rc=$?
+    if [ "$rc" -eq 0 ] && [ -n "${SC_KEEP_PASS_STATS:-}" ]; then
+      # Only `session` sets this. Keep the finished pass's line, with its final time/tokens/memory,
+      # so the cost of the note stays on screen; the next pass starts on
+      # a fresh line.
+      progress=""
+      if [ -n "$count" ]; then
+        tokens=$(wc -l < "$out" 2>/dev/null | tr -d ' ')
+        [ "${tokens:-0}" -gt 0 ] && progress=$(sc_token_progress "$tokens" $((SECONDS - ${t_first:-$SECONDS})))
+      fi
+      sc_status_line "$title" $((SECONDS - t0)) "✓" "$progress"
+      printf ' -- done!\n' >&2
+    else
+      printf '\r\033[K' >&2
+    fi
+  else
+    wait "$cpid"
+    rc=$?
   fi
-  wait "$cpid"
-  rc=$?
   trap - INT TERM
   rm -f "$body"
   return "$rc"
@@ -608,7 +662,8 @@ sc_spin_post() {
 # HTTP API directly rather than shelling out to `ollama run`: the CLI
 # renders a spinner/progress UI even when its stdout isn't a terminal,
 # which corrupts captured output. EXTRA is a JSON object deep-merged into
-# the request (the structured style's schema and sampling settings);
+# the request (the structured style's schema and sampling settings). Always
+# sent with think:false: reasoning made notes worse in testing.
 # without it the request is exactly what the narrative style always sent.
 sc_ollama_generate() {
   SC_RAW_NOTE=""; SC_RAW_DONE=""
@@ -629,15 +684,22 @@ sc_ollama_generate() {
   local ctx payload resp_file rc response
   ctx=$(sc_estimate_ctx "$prompt" "$headroom" 4096)
   payload=$(jq -n --arg model "$model" --arg prompt "$prompt" --argjson num_ctx "$ctx" \
-    '{model: $model, prompt: $prompt, stream: false, options: {num_ctx: $num_ctx}}')
+    '{model: $model, prompt: $prompt, stream: true, think: false, options: {num_ctx: $num_ctx}}')
   if [ -n "$extra" ]; then
     payload=$(printf '%s' "$payload" | jq --argjson x "$extra" '. * $x')
   fi
 
   sc_tmpfile resp_file || return 1
-  sc_spin_post "$title" "$host/api/generate" "$payload" "$resp_file" 300
+  sc_spin_post "$title" "$host/api/generate" "$payload" "$resp_file" 300 count
   rc=$?
-  response=$(cat "$resp_file"); rm -f "$resp_file"
+  # Streamed: one JSON object per token. Fold them back into the single
+  # object a non-streamed reply would have been (text joined, the last
+  # chunk's done_reason, any error).
+  response=$(jq -s 'if length == 0 then empty else {
+      response: (map(.response // "") | join("")),
+      done_reason: (map(.done_reason // empty) | last),
+      error: (map(.error // empty) | first) } end' "$resp_file" 2>/dev/null)
+  rm -f "$resp_file"
   # A mid-response --max-time timeout (curl exit 28) leaves a non-empty but
   # partial/invalid file -- check curl's own exit status, not just whether
   # anything got written, or a timeout gets misreported as "no content"
@@ -1353,6 +1415,8 @@ sc_cmd_session() {
   # in normal scrollback or a terminal app's session-restore snapshot. See
   # Retention in the README and sc_alt_screen_start's comment.
   sc_alt_screen_start
+  # Finished drafting passes leave their time/tokens/memory line on screen.
+  SC_KEEP_PASS_STATS=1
 
   sc_info "soapcap session — guided capture"
   sc_info "  • Use headphones so your mic does not pick up the other party."

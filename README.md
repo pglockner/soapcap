@@ -260,11 +260,16 @@ miss detail that is.
 `note` sizes the model's context window to the transcript's length, so
 long sessions aren't silently truncated.
 
-While it drafts, a status line shows elapsed time and memory in use,
-turning yellow at 75% and red at 90%. The number counts swap too, so it
-passes 100% once the Mac is swapping to make room, which slows drafting
-a lot. Closing other apps is the fix. The model is unloaded as soon as the
-note is done.
+While it drafts, a status line shows elapsed time, a live count of the
+tokens the model has generated (with a tokens-per-second rate), and memory
+in use, turning yellow at 75% and red at 90%. The memory number counts swap
+too, so it passes 100% once the Mac is swapping to make room, which slows
+drafting a lot; from 90% the line also shows swap in use. Closing other
+apps is the fix. In `session`, each finished pass keeps its line, ending
+`-- done!`, so you can see what the note cost; `note` clears it. The model
+is unloaded as soon as the note is done. Ollama models are asked not to
+"think" (`think: false`), since reasoning made notes worse in testing;
+Bonsai is the exception and keeps its thinking mode.
 
 **Models** — the two soapcap's prompts are tested with:
 

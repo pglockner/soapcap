@@ -124,7 +124,7 @@ assert_contains "note: prints the drafted note" "$FLOW_OUT" "SUBJECTIVE:"
 assert_contains "note: prints the note body" "$FLOW_OUT" "Stub note"
 assert_eq "note: exits 0" "0" "$FLOW_RC"
 assert_eq "note: requests the default model" "llama3.1:8b" "$(jq -r .model "$FLOW_DIR/first.json")"
-assert_eq "note: asks for a non-streaming response" "false" "$(jq -r .stream "$FLOW_DIR/first.json")"
+assert_eq "note: asks for a streamed response (live token count)" "true" "$(jq -r .stream "$FLOW_DIR/first.json")"
 assert_eq "note: sends the transcript after the prompt" "yes" \
   "$(jq -r '.prompt | contains("TRANSCRIPT:\nTherapist: hi\nClient: hello")' "$FLOW_DIR/first.json" | sed 's/true/yes/; s/false/no/')"
 assert_eq "note: starts with the SOAP prompt" "$(head -1 "$here/prompts/soap.md")" \
