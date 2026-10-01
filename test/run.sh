@@ -352,10 +352,11 @@ Continue." "$(printf 'ASSESSMENT:\nNot addressed in this session.\n\nPLAN:\nCont
 # shellcheck disable=SC1112  # the curly quotes are the point of the test
 para='The client reported a difficult week — “I’m exhausted,” they said — with work and caregiving demands.'
 # shellcheck disable=SC2016  # $1/$2 belong to the inner bash
-# BSD script takes the command as arguments, util-linux's as -c STRING.
-inner=$(printf '%q ' bash -c 'stty cols 30; . "$1/lib/common.sh"; sc_show "$2"' _ "$here" "$para")
+# BSD script takes the command as arguments, util-linux's as -c STRING
+# (run by sh, so the text goes in through the environment, not quoting).
 if script --version 2>&1 | grep -q util-linux; then
-  shown=$(COLUMNS=80 script -qec "$inner" /dev/null </dev/null \
+  shown=$(COLUMNS=80 SC_T_HERE="$here" SC_T_PARA="$para" script -qec \
+    "bash -c 'stty cols 30; . \"\$SC_T_HERE/lib/common.sh\"; sc_show \"\$SC_T_PARA\"'" /dev/null </dev/null \
     | LC_ALL=C sed -e 's/\r$//' | sed '/^$/d')
 else
   # shellcheck disable=SC2016  # $1/$2 belong to the inner bash
