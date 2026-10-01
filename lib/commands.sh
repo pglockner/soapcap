@@ -914,8 +914,9 @@ sc_splice_objective() {
 # rendered from the Objective pass's JSON.
 sc_add_objective() {
   local body
-  body=$(sc_render_objective "$1" "$SC_NOTE") && [ -n "$body" ] || {
-    sc_err "couldn't compose the Objective"; return 1; }
+  if ! body=$(sc_render_objective "$1" "$SC_NOTE") || [ -z "$body" ]; then
+    sc_err "couldn't compose the Objective"; return 1
+  fi
   SC_NOTE=$(printf '%s\n' "$SC_NOTE" | sc_splice_objective "$body")
 }
 
