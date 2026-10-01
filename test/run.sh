@@ -30,6 +30,8 @@ assert_eq() {
     printf 'FAIL %s\n' "$desc"
     printf '  expected: %q\n' "$expected"
     printf '  actual:   %q\n' "$actual"
+    # The last flow run's stderr, when there was one: usually the reason.
+    [ -n "${FLOW_ERR:-}" ] && printf '  stderr:   %s\n' "$(printf '%s' "$FLOW_ERR" | head -5)"
   fi
 }
 
@@ -350,8 +352,16 @@ Continue." "$(printf 'ASSESSMENT:\nNot addressed in this session.\n\nPLAN:\nCont
 # shellcheck disable=SC1112  # the curly quotes are the point of the test
 para='The client reported a difficult week — “I’m exhausted,” they said — with work and caregiving demands.'
 # shellcheck disable=SC2016  # $1/$2 belong to the inner bash
-shown=$(COLUMNS=80 script -q /dev/null bash -c 'stty cols 30; . "$1/lib/common.sh"; sc_show "$2"' _ "$here" "$para" </dev/null \
-  | LC_ALL=C sed -e $'s/^\\^D\b\b//' -e 's/\r$//' | sed '/^$/d')
+# BSD script takes the command as arguments, util-linux's as -c STRING.
+inner=$(printf '%q ' bash -c 'stty cols 30; . "$1/lib/common.sh"; sc_show "$2"' _ "$here" "$para")
+if script --version 2>&1 | grep -q util-linux; then
+  shown=$(COLUMNS=80 script -qec "$inner" /dev/null </dev/null \
+    | LC_ALL=C sed -e 's/\r$//' | sed '/^$/d')
+else
+  # shellcheck disable=SC2016  # $1/$2 belong to the inner bash
+  shown=$(COLUMNS=80 script -q /dev/null bash -c 'stty cols 30; . "$1/lib/common.sh"; sc_show "$2"' _ "$here" "$para" </dev/null \
+    | LC_ALL=C sed -e $'s/^\\^D\b\b//' -e 's/\r$//' | sed '/^$/d')
+fi
 widest=0
 while IFS= read -r l; do
   n=$(LC_ALL=en_US.UTF-8 bash -c 'printf %s "${#1}"' _ "$l")
@@ -375,7 +385,7 @@ SOAPCAP_SAVE_DIR=$(mktemp -d)/saved
 p1=$(sc_save_transcript "Client: [FIRST_NAME_1] said hi")
 p2=$(sc_save_transcript "second")
 assert_eq "save: writes the transcript" "Client: [FIRST_NAME_1] said hi" "$(cat "$p1")"
-assert_eq "save: readable by this user only" "600" "$(stat -f %Lp "$p1")"
+assert_eq "save: readable by this user only" "600" "$(stat -c %a "$p1" 2>/dev/null || stat -f %Lp "$p1")"
 assert_eq "save: a second save the same minute gets its own file" "second" "$(cat "$p2")"
 assert_contains "save: named so note's file picker finds it" "$p1" ".deid.transcript"
 rm -rf "$(dirname "$SOAPCAP_SAVE_DIR")"
