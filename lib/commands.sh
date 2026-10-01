@@ -1010,7 +1010,7 @@ sc_generate_note() {
     sc_info "note: $model hasn't been tested with soapcap's prompts — proofread it with extra care."
   fi
 
-  local full_prompt="" sprompt="" rc=0 note
+  local full_prompt="" sprompt="" rc=0 note=""
   if [ "$style" != structured ]; then
     full_prompt="$(cat "$prompt_file")
 
