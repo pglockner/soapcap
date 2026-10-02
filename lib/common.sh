@@ -160,6 +160,7 @@ sc_to_clipboard() {
     sc_info "(copied to clipboard)"
   else
     sc_info "(pbcopy not found — could not copy to clipboard)"
+    return 1
   fi
 }
 

@@ -515,6 +515,15 @@ sc_strip_trailing_disclaimer() {
   '
 }
 
+# sc_ctx_exceeds_cap PROMPT HEADROOM — succeeds when PROMPT plus HEADROOM
+# needs more than sc_estimate_ctx's 32768-token cap, i.e. the model would
+# silently lose part of the prompt (see sc_estimate_ctx).
+sc_ctx_exceeds_cap() {
+  local words
+  words=$(printf '%s' "$1" | wc -w | tr -d ' ')
+  [ $(( words * 3 / 2 + $2 )) -gt 32768 ]
+}
+
 # sc_estimate_ctx PROMPT HEADROOM FLOOR — prints a context-window size for
 # PROMPT. A context too small for the prompt fails silently: the model
 # just loses part of it (often the rules, which come first) and produces
@@ -1021,6 +1030,13 @@ $transcript"
     sprompt=$(sc_structured_prompt "$format" "$transcript")
   fi
 
+  # Past the context cap a model silently loses part of its input, and what
+  # it writes then can look fine while missing whole sections.
+  if { [ -n "$full_prompt" ] && sc_ctx_exceeds_cap "$full_prompt" 2048; } \
+     || { [ -n "$sprompt" ] && sc_ctx_exceeds_cap "$sprompt" 3072; }; then
+    sc_info "warning: this transcript is very long — it may be more than $model can take in at once, so sections of the note (Subjective especially) may be missing or wrong. Check the note against the transcript."
+  fi
+
   # SOAP's Objective always comes from a pass of its own (see
   # sc_objective_prompt), whatever the style.
   # With no client speech at all (the other side of the call wasn't
@@ -1357,18 +1373,64 @@ sc_cmd_deidentify() {
   return 0
 }
 
-# sc_save_transcript TEXT — saves a de-identified transcript under
-# SOAPCAP_SAVE_DIR as <date>-<time>.deid.transcript (a name `note`'s file
-# picker finds), readable by this user only, never overwriting an existing
-# file. Prints the path.
+# sc_save_transcript TEXT [LABEL] — saves a transcript under SOAPCAP_SAVE_DIR
+# as <date>-<time>.<LABEL>.transcript (a name `note`'s file picker finds;
+# LABEL defaults to "deid", for a de-identified one), readable by this user
+# only, never overwriting an existing file. Prints the path.
 sc_save_transcript() {
   local dir="$SOAPCAP_SAVE_DIR" base path n=1
-  base="$(date +%Y-%m-%d-%H%M).deid"
+  base="$(date +%Y-%m-%d-%H%M).${2:-deid}"
   mkdir -p "$dir" && chmod 700 "$dir" 2>/dev/null
   path="$dir/$base.transcript"
   while [ -e "$path" ]; do n=$((n + 1)); path="$dir/$base-$n.transcript"; done
   ( umask 077; printf '%s\n' "$1" > "$path" ) || { sc_err "couldn't write $path"; return 1; }
   printf '%s\n' "$path"
+}
+
+# sc_subjective_missing — reads a note on stdin; succeeds when it has no
+# SUBJECTIVE section, or one that is empty or just "Not addressed in this
+# session" (a small model sometimes writes that despite client speech).
+sc_subjective_missing() {
+  awk '
+    function hdr(name) { return $0 ~ ("^[#* \t]*" name "[* \t]*:") }
+    hdr("SUBJECTIVE") { found = 1; insec = 1; sub(/^[^:]*:/, ""); body = body $0; next }
+    insec && (hdr("OBJECTIVE") || hdr("ASSESSMENT") || hdr("PLAN")) { insec = 0 }
+    insec { body = body $0 }
+    END {
+      gsub(/[ \t*.]/, "", body)
+      exit !(!found || body == "" || tolower(body) == "notaddressedinthissession")
+    }
+  '
+}
+
+# sc_offer_save_transcript TRANSCRIPT DEIDENTIFIED — session's offer when the
+# SOAP note came out with no Subjective, so the transcript can be looked at
+# afterwards. Default no. Sets SC_OFFER_SAVED to the saved path. A transcript
+# that wasn't de-identified is de-identified first when the helper is built,
+# if she agrees; otherwise it is saved as is, and the message says so.
+sc_offer_save_transcript() {
+  SC_OFFER_SAVED=""
+  local text="$1" deid="$2" label=deid path
+  sc_info ""
+  sc_info "This note has no Subjective section, which usually means something went wrong."
+  [ "$(sc_choose "Save the transcript to $SOAPCAP_SAVE_DIR so it can be looked at?" no yes)" = yes ] || return 0
+  if [ "$deid" -ne 1 ]; then
+    if [ -x "$SOAPCAP_DEIDENTIFY_BIN" ] && sc_confirm "De-identify it first?" \
+         && sc_deidentify_transcript "$text"; then
+      text="$SC_DEIDENTIFY_TRANSCRIPT"; sc_info "transcript: $SC_DEIDENTIFY_SUMMARY"
+    else
+      label=original
+    fi
+  fi
+  path=$(sc_save_transcript "$text" "$label") || return 0
+  SC_OFFER_SAVED="$path"
+  if [ "$label" = original ]; then
+    sc_info "saved: $path — this is the ORIGINAL transcript and holds client details; handle it as you would a session record, and delete it when done"
+  else
+    sc_info "saved: $path — best-effort de-identification; review it before sharing, and delete it when done"
+  fi
+  command -v open >/dev/null 2>&1 && open -R "$path" 2>/dev/null
+  sc_info "(shown in Finder: the soapcap folder in your home folder)"
 }
 
 # ---------------------------------------------------------------------------
@@ -1387,7 +1449,7 @@ sc_save_transcript() {
 sc_cmd_session() {
   local mic="$SOAPCAP_MIC_LABEL" sys="$SOAPCAP_SYSTEM_LABEL" locale="$SOAPCAP_LOCALE"
   local dedupe=1 format="" model="$SOAPCAP_MODEL" host="$SOAPCAP_OLLAMA_HOST"
-  local style="$SOAPCAP_STYLE" no_note=0 clipboard=0 model_given=0
+  local style="$SOAPCAP_STYLE" no_note=0 clipboard=0 model_given=0 note_copied=0 offered_save="" saved_for_review=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --mic-label)    mic="${2:?}"; shift 2 ;;
@@ -1541,6 +1603,12 @@ MODELS
         sc_show "$SC_NOTE"
         sc_info "-------------------------"
         [ -n "$SC_REVIEW" ] && sc_info "$SC_REVIEW"
+        if [ -t 0 ] && [ "$format" = soap ] && [ -z "$offered_save" ] \
+             && printf '%s\n' "$SC_NOTE" | sc_subjective_missing; then
+          offered_save=1
+          sc_offer_save_transcript "$transcript" "$deidentify"
+          [ -n "$SC_OFFER_SAVED" ] && saved_for_review="$SC_OFFER_SAVED"
+        fi
         if [ -t 0 ]; then
           # LLM output is stochastic -- a weak draft is often just an
           # unlucky roll, so offer another attempt with the same
@@ -1568,15 +1636,23 @@ MODELS
     # separate clipboard confirm right after was redundant in practice
     # (confirmed by hands-on testing), so keeping now copies directly.
     if [ "$keep_note" -eq 1 ] && [ -n "$SC_NOTE" ] && { [ "$clipboard" -eq 1 ] || [ -t 0 ]; }; then
-      sc_to_clipboard "$SC_NOTE"
+      sc_to_clipboard "$SC_NOTE" && note_copied=1
     fi
   elif [ "$clipboard" -eq 1 ]; then
     sc_to_clipboard "$transcript"
   fi
 
+  # Last thing on screen, so it's easy to see: the on-screen copy has no
+  # scrollback, so a long note loses its top when selected by hand.
+  if [ "$note_copied" -eq 1 ]; then
+    sc_info ""
+    sc_info "Note copied to clipboard — Cmd-V to paste it into your preferred editor."
+  fi
   sc_info ""
   if [ -n "$saved" ]; then
     sc_info "The de-identified transcript is saved at $saved; nothing else was written to disk."
+  elif [ -n "$saved_for_review" ]; then
+    sc_info "The transcript is saved at $saved_for_review; nothing else was written to disk."
   else
     sc_info "Nothing here was written to disk unless you redirected it yourself."
   fi

@@ -344,6 +344,25 @@ Not addressed in this session.
 PLAN:
 Continue." "$(printf 'ASSESSMENT:\nNot addressed in this session.\n\nPLAN:\nContinue.\n' | sc_default_plan)"
 
+# --- sc_ctx_exceeds_cap -------------------------------------------------
+
+short=$(awk 'BEGIN{for(i=0;i<9000;i++)printf "w "}')
+long=$(awk 'BEGIN{for(i=0;i<22000;i++)printf "w "}')
+assert_eq "ctx cap: a 9000-word prompt fits" fits "$(sc_ctx_exceeds_cap "$short" 1024 && echo over || echo fits)"
+assert_eq "ctx cap: a 22000-word prompt does not" over "$(sc_ctx_exceeds_cap "$long" 1024 && echo over || echo fits)"
+
+# --- sc_subjective_missing ----------------------------------------------
+
+miss() { printf '%b' "$1" | sc_subjective_missing && echo missing || echo present; }
+assert_eq "subjective: real content is present" present \
+  "$(miss '63 minutes, telehealth\n\nSUBJECTIVE:\nFelt anxious.\n\nOBJECTIVE:\nx\n')"
+assert_eq "subjective: \"Not addressed\" is missing" missing \
+  "$(miss 'SUBJECTIVE:\nNot addressed in this session\n\nOBJECTIVE:\nx\n')"
+assert_eq "subjective: empty is missing" missing "$(miss 'SUBJECTIVE:\n\nOBJECTIVE:\nx\n')"
+assert_eq "subjective: no header is missing" missing "$(miss 'and confused.\n\nOBJECTIVE:\nx\n')"
+assert_eq "subjective: bold header with text on the line is present" present \
+  "$(miss '**SUBJECTIVE:** Felt anxious.\n\nOBJECTIVE:\nx\n')"
+
 # --- sc_show: word-wrap for the terminal only ---------------------------
 
 # script(1) gives sc_show a real terminal 30 columns wide -- with a stale

@@ -427,7 +427,11 @@ it looks like a full-screen app and clears when you press Enter at the end.
    with the same model and transcript; `discard` ends with no note. `keep`
    copies the note to the clipboard. The note opens with the session line
    (e.g. `63 minutes, telehealth`) — recording time, pauses excluded; see
-   [Draft a note](#draft-a-note).
+   [Draft a note](#draft-a-note). If a SOAP draft comes out with no
+   Subjective section, it first offers to **save the transcript** (default
+   **no**) to `~/soapcap/transcripts` (`SOAPCAP_SAVE_DIR`) and shows the
+   file in Finder. With the de-identify helper built, it offers to
+   de-identify first; otherwise the saved file is the original transcript.
 
 Enter takes the default at every prompt; without
 [gum](#nicer-prompts-and-file-picking), a bare first letter works too (`r`
