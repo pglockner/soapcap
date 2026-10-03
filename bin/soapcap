@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # soapcap — capture a speaker-attributed transcript of a telehealth session
 # using only on-device macOS transcription (Apple SpeechAnalyzer, via `yap`),
-# then draft a SOAP/DAP/BIRP note from it with a local Ollama model.
+# then draft a SOAP/DAP/BIRP note from it with a local model.
 set -u
 
 SC_VERSION="0.10.1"
@@ -19,10 +19,8 @@ done
 SC_ROOT=$(cd -P "$(dirname "$_sc_src")/.." && pwd)
 unset _sc_src _sc_dir
 
-SC_WORKDIR=""
 SC_JSON=""
 SC_ALT_SCREEN=0
-SC_TMP_FILES=""
 
 # shellcheck source=lib/common.sh
 . "$SC_ROOT/lib/common.sh"

@@ -46,27 +46,34 @@ sc_info() { printf '%s\n' "$*" >&2; }
 sc_die()  { sc_err "$*"; exit 1; }
 
 # ---- cleanup ---------------------------------------------------------------
-# SC_WORKDIR holds a per-run mktemp dir that only ever contains a FIFO and
-# yap's stderr. Removed on every exit path.
+# Every temp file and directory soapcap makes is registered here and removed
+# on every exit path (bin/soapcap's EXIT trap runs sc_cleanup): they hold
+# yap's JSON, the transcript or the note. One list rather than a slot per
+# caller, so a nested caller can't unregister another's directory.
+SC_TMP_PATHS=()
+
 sc_cleanup() {
   sc_bonsai_stop
-  if [ -n "${SC_WORKDIR:-}" ] && [ -d "${SC_WORKDIR:-}" ]; then
-    rm -rf "$SC_WORKDIR"
-  fi
-  SC_WORKDIR=""
-  # shellcheck disable=SC2086  # a space-separated list of mktemp paths
-  [ -n "${SC_TMP_FILES:-}" ] && rm -f $SC_TMP_FILES
-  SC_TMP_FILES=""
+  [ "${#SC_TMP_PATHS[@]}" -gt 0 ] && rm -rf "${SC_TMP_PATHS[@]}"
+  SC_TMP_PATHS=()
 }
 
-# sc_tmpfile VAR — creates a private temp file, stores its path in VAR,
-# and registers it so sc_cleanup removes it on every exit path, including
-# a kill mid-request (these files hold the transcript or the note).
+# sc_tmpfile VAR — creates a private temp file, stores its path in VAR, and
+# registers it for sc_cleanup.
 sc_tmpfile() {
   local f
   f=$(mktemp) || { sc_err "could not create a temp file"; return 1; }
-  SC_TMP_FILES="${SC_TMP_FILES:-} $f"
+  SC_TMP_PATHS+=("$f")
   printf -v "$1" '%s' "$f"
+}
+
+# sc_tmpdir VAR — the same for a private (chmod 700) temp directory.
+sc_tmpdir() {
+  local d
+  d=$(mktemp -d "${TMPDIR:-/tmp}/soapcap.XXXXXX") || { sc_err "could not create a temp directory"; return 1; }
+  chmod 700 "$d" 2>/dev/null
+  SC_TMP_PATHS+=("$d")
+  printf -v "$1" '%s' "$d"
 }
 
 # sc_bonsai_stop — stops the llama-server sc_bonsai_start launched, if any,
@@ -273,7 +280,7 @@ USAGE
   soapcap version | help
 
 WHILE RECORDING (live / session, when run from a real terminal)
-  q, x, Ctrl-C          Stop for good
+  q, x, Ctrl-C          Stop for good (while paused too)
   p, space              Pause — nothing is captured until you resume (p again)
 
 OPTIONS (live / transcribe / session)
