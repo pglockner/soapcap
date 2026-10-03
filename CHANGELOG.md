@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.10 (2026-10-03)
+
+- Replaced the Swift de-identify helper with a Python one that doesn't need Xcode or an existing Python; set it up with `tools/deidentify/install.sh`.
+- Changed de-identify so it no longer redacts clock times.
+
 ## 0.9 (2026-10-03)
 
 - Moved the experimental window app out of this repository; it is now the seed of a separate Swift rewrite, which is in development.
