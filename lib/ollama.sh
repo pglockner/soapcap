@@ -64,11 +64,14 @@ sc_ollama_start() {
 # and SC_RAW_DONE (Ollama's done_reason). CAP is the output cap in tokens:
 # without one, a model that starts repeating itself runs until the request
 # times out. With SCHEMA (a JSON schema) the reply is JSON matching it, under
-# the structured style's sampling settings; without, prose under the model's
-# own defaults. Talks to Ollama's HTTP API directly rather than shelling out
-# to `ollama run`: the CLI renders a spinner/progress UI even when its stdout
-# isn't a terminal, which corrupts captured output. Always sent with
-# think:false: reasoning made notes worse in testing.
+# the structured style's sampling settings; without, prose under the
+# narrative ones, the same as Bonsai's (sc_bonsai_request): llama3.1:8b
+# wrote "Not addressed in this session" under a section the transcript
+# covers less often with them than with Ollama's defaults (2 of 40 sample
+# drafts against 6 of 40). Talks to Ollama's HTTP API directly rather than
+# shelling out to `ollama run`: the CLI renders a spinner/progress UI even
+# when its stdout isn't a terminal, which corrupts captured output. Always
+# sent with think:false: reasoning made notes worse in testing.
 sc_ollama_request() {
   SC_RAW_NOTE=""; SC_RAW_DONE=""
   local model="$1" host="$2" prompt="$3" title="$4" cap="$5" schema="${6:-}"
@@ -81,7 +84,7 @@ sc_ollama_request() {
        options: {num_ctx: $ctx, num_predict: $cap}}
       | if $schema then .format = $schema
                         | .options += {temperature: 0.3, top_p: 0.8, top_k: 20}
-        else . end')
+        else .options += {temperature: 0.7, top_p: 0.8, top_k: 20} end')
 
   sc_tmpfile resp_file || return 1
   sc_spin_post "$title" "$host/api/generate" "$payload" "$resp_file" 300 count
