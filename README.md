@@ -6,9 +6,9 @@ download, no virtual audio devices, and by default **nothing written to
 disk**.
 
 `soapcap note` then drafts a SOAP/DAP/BIRP note from that transcript with a
-**local model** (llama3.1:8b via Ollama, or the optional Bonsai) — nothing
-leaves the machine. A cloud path
-(SoapNoteAI/Upheal) isn't built yet; see [Roadmap](#roadmap).
+**local model** (llama3.1:8b via Ollama, or the optional Bonsai), and
+`soapcap deidentify` can redact names and other identifiers first. Nothing
+leaves the machine. `soapcap session` walks through all of it with prompts.
 
 ---
 
@@ -58,7 +58,7 @@ with any conferencing tool.
   [Draft a note](#draft-a-note).
 - **Optional polish**, both auto-detected, neither required: **gum** (nicer
   `session` prompts) and **fzf** (browse for a transcript file in `note`).
-  See [Nicer prompts and file picking](#nicer-prompts-and-file-picking).
+  See [Setup in detail](docs/setup.md#nicer-prompts-and-file-picking).
 
 ---
 
@@ -81,13 +81,6 @@ No git installed? Click **Code → Download ZIP** on the
 into the extracted folder and run `./install.sh` the same way — nothing in
 soapcap depends on `.git` being present.
 
-Or by hand:
-
-```sh
-brew install yap jq
-ln -s "$PWD/bin/soapcap" "$(brew --prefix)/bin/soapcap"   # optional PATH link
-```
-
 Grant permissions **to the terminal app you run `soapcap` from** (Terminal,
 iTerm, etc.), then fully quit and reopen it:
 
@@ -101,37 +94,11 @@ Then verify:
 soapcap doctor
 ```
 
-Expected tail (numbers are this machine's — `doctor` reads yours live via
-`sysctl`/`df` and sizes its model advice accordingly; non-Apple-silicon fails
-outright):
-
-```
-  ok    macOS 26.x
-  ok    Apple M5, 16GB unified memory, 10 cores
-        16GB: llama3.1:8b (default) works; close memory-heavy apps
-        (browsers, other local models) first. bonsai fits too, but uses
-        most of this memory while it drafts
-  ok    yap 1.2.1 (/opt/homebrew/bin/yap)
-  ok    jq 1.8.2 (/opt/homebrew/bin/jq)
-  ok    yap ran and returned valid JSON — permissions look granted
-
-  ok    ollama running, llama3.1:8b pulled — 'note' is ready
-  ok    Bonsai set up — 'note --model bonsai' is ready
-  ok    gum present — 'session' prompts use it for arrow-key choose/confirm
-  ok    fzf present — 'note' with no FILE can browse for one
-
-Ready.
-```
-
-`ollama`/Bonsai/`gum`/`fzf` lines are informational — `live`/`transcribe` work
-without any of them. `install.sh` offers to set up `note` (Ollama +
-`llama3.1:8b`) already; by hand:
-
-```sh
-brew install ollama
-brew services start ollama       # keeps it running across reboots
-ollama pull llama3.1:8b          # ~5GB, one time
-```
+`doctor` checks the Mac, `yap`, `jq` and the capture permissions, then reports
+whether Ollama, Bonsai, `gum` and `fzf` are present. Those last four are
+informational: `live`/`transcribe` work without any of them.
+[Setup in detail](docs/setup.md) has the expected output, the by-hand
+install steps, and the optional extras.
 
 Switch the `session`/`note` default between `llama3.1:8b` and `bonsai` any
 time with `soapcap model` — see [Draft a note](#draft-a-note).
@@ -182,8 +149,7 @@ soapcap transcribe recording.m4a
 soapcap transcribe recording.m4a --out out.transcript
 ```
 
-For a file you already have (e.g. a QuickTime capture headed to Upheal, or a
-test clip). No speaker separation — single audio track, every line is
+For a file you already have (e.g. a QuickTime capture or a test clip). No speaker separation — single audio track, every line is
 `Speaker:`.
 
 ### Draft a note
@@ -201,55 +167,6 @@ surface anything suggesting risk (self-harm, harm to others, abuse, crisis),
 and write "Not addressed in this session" rather than pad a section out.
 Formats: `soap` (default), `dap`, `birp`.
 
-**SOAP notes** follow a fixed house format:
-
-- **Objective** is a brief mental-status summary, drafted by a **second
-  model pass** of its own ([`prompts/objective.md`](prompts/objective.md)).
-  The model supplies one short clinical phrase for each of engagement,
-  affect, mood, speech, thought process, insight, judgment and psychomotor.
-  soapcap puts them in a fixed frame:
-
-  > On time via video. Engaged and collaborative. Affect congruent; mood
-  > mildly stressed. Speech clear and articulate. Thought process linear.
-  > Insight improving; judgment intact. No psychomotor abnormalities. No
-  > SI/HI reported.
-
-  These phrases are the model's judgment from a text transcript, not
-  something it observed, so check each one against what you saw. "On
-  time via video." is fixed text; edit it when that isn't true. The last
-  sentence depends on what the session showed:
-  - **"No SI/HI reported."** appears only when the Objective pass found no
-    disclosure *and* the rest of the note has no risk language (a plain
-    denial like "denied suicidal ideation" doesn't count as risk language).
-  - **A disclosure** replaces it with a fixed line naming only the kind:
-    "SI reported; see Assessment and Plan." (or HI, SI and HI,
-    self-harm). Check plan, intent and means in Assessment and Plan.
-  - **Risk language in the note that the Objective pass missed** gives a
-    bracketed "[… confirm SI/HI status before signing.]" instead.
-  - **If the Objective pass fails**, the rest of the note is kept, and
-    Objective says in brackets that it needs completing by hand.
-  - **If the transcript has no client lines at all** (the other side of
-    the call wasn't captured), there's no Objective pass. Objective says
-    in brackets to complete it by hand, rather than rating the therapist.
-- **Plan** always states the plan of care. It covers what the session
-  set up (interventions, homework, referrals, follow-up) and then closes
-  with "The current plan of care will continue." when the session didn't
-  change the plan of care. The models don't always get that distinction
-  right, so check that closing line when a session did change the plan.
-- **Session line.** With `--duration MINUTES`, the note starts with a line
-  like `63 minutes, telehealth`. `session` adds it automatically from
-  recording time: whole minutes, rounded down, with paused time left out.
-  Set `SOAPCAP_SESSION_TYPE` in config to change "telehealth". A
-  transcript file doesn't record how long the session ran, so `note FILE`
-  leaves the line out unless you pass `--duration`.
-
-The second pass makes a SOAP note take roughly twice as long as a DAP or
-BIRP note.
-
-To try it without a real session, use the fictional transcripts in
-[`samples/transcripts/`](samples/transcripts/). Its README explains what
-each one tests, for prompt tuning and for de-identification.
-
 **Read every note before it goes near a chart.** It's still an LLM. Mistakes
 concentrate in the Objective section. In a SOAP note it's a mental-status
 judgment made from text alone; in DAP/BIRP, telling an actual in-the-room
@@ -257,97 +174,28 @@ observation apart from a client's own description of how they've been
 feeling. Either way, a smaller model can invent detail that isn't there or
 miss detail that is.
 
-`note` sizes the model's context window to the transcript's length, so
-long sessions aren't silently truncated.
-
-While it drafts, a status line shows elapsed time, a live count of the
-tokens the model has generated (with a tokens-per-second rate), and memory
-in use, turning yellow at 75% and red at 90%. The memory number counts swap
-too, so it passes 100% once the Mac is swapping to make room, which slows
-drafting a lot; from 90% the line also shows swap in use. Closing other
-apps is the fix. In `session`, each finished pass keeps its line, ending
-`-- done!`, so you can see what the note cost; `note` clears it. The model
-is unloaded as soon as the note is done. Ollama models are asked not to
-"think" (`think: false`), since reasoning made notes worse in testing;
-Bonsai is the exception and keeps its thinking mode.
-
-**Models** — the two soapcap's prompts are tested with:
-
 | Model | Size | Notes |
 |---|---|---|
-| `llama3.1:8b` | ~5GB | **Default.** Fast: 1–2 minutes a SOAP note. Often assigns a pronoun from the client's name and gets details wrong. Proofread pronouns and facts. |
-| `bonsai` | ~6GB (16GB+ Mac) | Bonsai 2 27B, a ternary-weight model from PrismML. Slower (4–8 minutes a SOAP note), and it uses most of a 16GB Mac's memory while it runs. More accurate, and keeps pronouns neutral. Still proofread it. |
+| `llama3.1:8b` | ~5GB | **Default.** Fast: 1–2 minutes a SOAP note. Proofread pronouns and facts. |
+| `bonsai` | ~6GB (16GB+ Mac) | Slower (4–8 minutes a SOAP note), more accurate. Set up with `tools/bonsai/install.sh`. |
 
-**`soapcap model`** shows both with their live status, plus any other
-model you've already pulled into Ollama (marked untested), and lets you pick
-one as the default for `session`/`note` (pulling `llama3.1:8b` via Ollama
-if needed). `--model` still overrides it per run. The authoritative list
-is [`sc_model_catalog`](lib/commands.sh).
+`soapcap model` shows both with their live status and picks the default for
+`session`/`note`; `--model` overrides it per run.
 
-**Setting up Bonsai.** Bonsai's weights use a format only
-[PrismML's llama.cpp fork](https://github.com/PrismML-Eng/llama.cpp) can
-load — not Ollama, not stock llama.cpp. `install.sh` offers it, or run it
-any time:
+`--style` (or `SOAPCAP_STYLE`) chooses how the note is produced: `narrative`
+(default, the model writes prose), or the experimental `structured` (the
+model fills in fields, soapcap checks them and writes the note) and
+`combined` (a narrative note plus a review of it printed to the terminal).
 
-```sh
-tools/bonsai/install.sh    # builds the fork's llama-server (pinned, ~2 min),
-                           # downloads the model (~6GB, checksum-verified)
-                           # into ~/.local/share/soapcap/bonsai
-soapcap note --model bonsai transcript.txt
-```
-
-soapcap starts Bonsai's server on `127.0.0.1` only when drafting a note and
-stops it straight after, so its memory is free the rest of the time. Its
-location and port are configurable — see `config.example.sh`.
-
-**Bonsai only?** Bonsai doesn't use Ollama, so once it's your default you
-can reclaim llama3.1:8b's space — `note`, `session` and `doctor` are fine
-without it, and re-running `install.sh` won't offer it by default:
-
-```sh
-soapcap model                 # pick bonsai
-ollama rm llama3.1:8b         # frees ~5GB
-brew uninstall ollama         # optional, if nothing else uses it
-```
-
-**Other models.** Any other Ollama model works too, but outside the two
-above soapcap flags it as untested each time, and its notes need closer
-proofreading. Pull it, then name it:
-
-```sh
-ollama pull qwen2.5:14b
-soapcap note --model qwen2.5:14b transcript.txt
-```
-
-To make it stick, set `SOAPCAP_MODEL="qwen2.5:14b"` in
-`~/.config/soapcap/config.sh`. `qwen2.5:14b` (~9GB, about as fast as the
-default) is a reasonable middle ground, but in SOAP notes it often assigns
-pronouns from names and adds detail the transcript doesn't support.
-
-**Note style** — `--style`, or `SOAPCAP_STYLE` in config. `structured` and
-`combined` are experimental.
-
-| Style | What happens | Trade-off |
-|---|---|---|
-| `narrative` | **Default.** The model writes the note as prose from `prompts/<format>.md`. | Fullest Subjective and the most natural wording. Format rules depend on the model following the prompt. |
-| `structured` | The model fills in a fixed set of fields — each Objective observation (DAP/BIRP) and next step cites the transcript line it comes from — and soapcap checks them and writes the note itself. SOAP's Objective still comes from its own pass. | Headers, the Objective rule and "Not addressed" are guaranteed by code rather than the model. Plan lists every commitment, and a disclosed risk's safety plan (warning signs, coping strategies, supports, emergency steps) in full. Cited lines, who-said-what, and quotes are checked against the transcript. But Subjective comes out briefer than narrative's, and Plan reads as composed sentences rather than free prose. |
-| `combined` | A narrative note, plus a structured pass used only to check it. | The narrative note, unchanged, plus a review: quotes that aren't in the transcript, a safety risk or safety screen the note doesn't mention, and a checklist of the next steps mentioned in the session. **One more model pass** than narrative, so SOAP takes three. |
-
-With `llama3.1:8b`, structured DAP/BIRP notes can copy transcript lines
-word for word; use `narrative` with that model.
-
-Reviews print to the terminal only (stderr) — never into the note, `--out`,
-or the clipboard.
-
-The next-steps checklist lists every next step the check found, with its
-transcript line. It doesn't say which ones the note is missing; check
-those yourself.
-
-Structured style's rules, field guide and schema are in
-[`prompts/structured/`](prompts/structured/); its checks and rendering are
-in [`lib/structured/`](lib/structured/).
+To try it without a real session, use the fictional transcripts in
+[`samples/transcripts/`](samples/transcripts/). Its README explains what
+each one tests, for prompt tuning and for de-identification.
 
 Other flags: `--style STYLE`, `--duration MINUTES`, `--host URL`, `--clipboard`.
+
+[Notes in detail](docs/notes.md) covers the SOAP house format (the separate
+Objective pass, the SI/HI line, Plan, the session line), the drafting status
+line, setting up Bonsai, other models, and the note styles.
 
 ### De-identify
 
@@ -366,23 +214,12 @@ same placeholder everywhere it's tagged, so a note drafted from the
 result still reads coherently. Speaker labels (`Therapist:`/`Client:`)
 are never touched, even if a label happens to be someone's real name.
 
-Needs the `tools/deidentify-helper` Swift binary — `install.sh` checks
-the requirements and offers to build it if they're met (full Xcode, not
-just Command Line Tools — see
-[tools/deidentify-helper/README.md](tools/deidentify-helper/README.md#requirements)
-for the complete list and how much effort each one is), or build it by
-hand:
-
-```sh
-cd tools/deidentify-helper && swift build -c release
-```
-
-First real run also downloads the Privacy Filter model's weights
+Needs the `tools/deidentify-helper` Swift binary, which takes full Xcode
+(not just Command Line Tools) to build. `install.sh` checks the requirements
+and offers to build it; the
+[helper's README](tools/deidentify-helper/README.md#requirements) lists them
+and the by-hand build. The first real run downloads the model's weights
 (one-time, no transcript data involved).
-
-Unlike the rest of soapcap, building this helper needs `git` (bundled with
-Xcode) and network access to GitHub, to fetch OpenMedKit; the first real
-run also fetches model weights from Hugging Face.
 
 **This is a best-effort pass, not a certified de-identification.** It
 redacts what OpenMedKit's model tags, plus two narrow pattern rules (month
@@ -432,7 +269,7 @@ it looks like a full-screen app and clears when you press Enter at the end.
    de-identify first; otherwise the saved file is the original transcript.
 
 Enter takes the default at every prompt; without
-[gum](#nicer-prompts-and-file-picking), a bare first letter works too (`r`
+[gum](docs/setup.md#nicer-prompts-and-file-picking), a bare first letter works too (`r`
 for regenerate, `b` for birp). `--format`, `--no-note`, and `--model` skip
 the matching prompt; `--clipboard` forces the copy on non-interactive runs.
 Every `live`/`note` flag still applies. The model is whatever
@@ -454,104 +291,32 @@ Keypresses need a real terminal (`soapcap.command` and a normal interactive
 run both qualify). Backgrounded/piped invocations fall back to signal-only
 control — Ctrl-C / `kill -TERM` to stop, no pause.
 
-### Nicer prompts and file picking
-
-Two independent, fully optional integrations — `doctor` reports whether
-each is present, and nothing breaks without them:
-
-- **[gum](https://github.com/charmbracelet/gum)** replaces `session`'s
-  plain `[Y/n]` prompts with a styled confirm and an arrow-key choose menu.
-  `install.sh` offers to install it. Without it, `session` falls back to
-  the plain prompts exactly as before.
-- **[fzf](https://junegunn.github.io/fzf/)** lets `soapcap note` (run with
-  no `FILE` and nothing piped in) browse for a transcript interactively
-  instead of hanging on stdin waiting for typed input. Searches
-  `SOAPCAP_TRANSCRIPT_DIR` (default `$HOME`) for `*.transcript` files.
-  Without it, `note` in that situation just tells you to pass a file or
-  pipe one in.
-
-Neither changes scripted use (`live | note`, `--format`/`--clipboard`, an
-explicit `FILE` argument) at all — both only ever replace a prompt that
-would otherwise be plain text or would otherwise block.
-
 ---
 
 ## Clickable shortcut
 
 `soapcap.command` at the repo root is a double-clickable entry point —
 Finder opens `.command` files in Terminal.app automatically and runs
-`soapcap session` there. `install.sh` offers to symlink it onto your
-Desktop; by hand:
+`soapcap session` there. `update.command` is a second one that runs
+`git pull` in the repo. `install.sh` offers to put both on your Desktop.
 
-```sh
-ln -sf /path/to/soapcap/soapcap.command ~/Desktop/soapcap.command
-```
-
-**First double-click**: not usually needed after a plain `git clone` on the
-same Mac, but a copy that crossed machines some other way — the ZIP
-download, AirDrop, a USB drive — carries Gatekeeper's quarantine flag.
-Current macOS won't offer a direct "Open" button for an unsigned script;
-double-click (or right-click → Open) once to trigger the block, then go to
-**System Settings → Privacy & Security**, scroll to the Security section,
-and click **Open Anyway** next to the `soapcap.command` notice (confirm
-with your password/Touch ID, then **Open** once more in the follow-up
-dialog). After that it opens normally, no repeat needed.
-
-**Icon**: `install.sh` gives the Desktop shortcut a custom icon
-(`assets/soapcap.icns`) via [fileicon](https://github.com/mklement0/fileicon),
-offering to install it if missing. Cosmetic only. By hand:
-
-```sh
-brew install fileicon
-fileicon set ~/Desktop/soapcap.command /path/to/soapcap/assets/soapcap.icns
-```
-
-**Updating**: `update.command` is a second double-clickable shortcut that
-runs `git pull` in the repo. `install.sh` only adds it for a git clone (a
-ZIP download has no `.git` to pull from). By hand:
-
-```sh
-ln -sf /path/to/soapcap/update.command ~/Desktop/update.command
-fileicon set ~/Desktop/update.command /path/to/soapcap/assets/soapcap-update.icns
-```
-
-**Keyboard shortcut:** in Shortcuts.app, add a "Run Shell Script" action
-running `/path/to/soapcap/bin/soapcap session`, then assign it a shortcut
-in that shortcut's settings.
+The first double-click of a copy that came from a ZIP download, AirDrop or a
+USB drive is blocked by Gatekeeper; allow it once under **System Settings →
+Privacy & Security → Open Anyway**. Details, icons and a keyboard shortcut
+are in [Setup in detail](docs/setup.md#clickable-shortcut).
 
 ---
 
 ## Without headphones
 
 `yap`'s speaker labels are **which audio source** picked up the words, not a
-voiceprint — Apple's Speech framework has no public on-device
-speaker-diarization API. Without headphones there's a real but
-**one-directional** leak: whatever plays through your speakers is
-acoustically audible in the room, so your mic hears it too and transcribes
-it a second time under your label. It doesn't happen in reverse — your
-voice never loops back into system audio.
-
-`soapcap live` runs a **dedupe pass** by default: a mic-side segment whose
-wording is largely *contained in* a system-side segment nearby in time is
-dropped as an echo. It errs toward keeping lines: a missed echo is a
-duplicate, a wrongly dropped segment is lost. Tunable via env or
-`~/.config/soapcap/config.sh`:
-
-```sh
-SOAPCAP_DEDUPE_WINDOW=3.5      # seconds of timing slack
-SOAPCAP_DEDUPE_THRESHOLD=0.7   # word-containment ratio (0–1) to call it an echo
-SOAPCAP_DEDUPE_MINWORDS=2      # segments shorter than this are never dropped
-```
-
-`--no-dedupe` shows the raw output. Expect an occasional one-word duplicate,
-since segments under `SOAPCAP_DEDUPE_MINWORDS` are never dropped.
-Headphones (even one earbud) remain the more reliable fix.
-
-### Real diarization
-
-Voice-based diarization (e.g. [FluidAudio](https://github.com/FluidInference/FluidAudio),
-on-device) isn't wired in: it needs recorded audio, which the `live` path
-never produces (see [Retention](#retention)).
+voiceprint. Without headphones, whatever plays through your speakers is
+heard by your mic too and transcribed a second time under your label.
+`soapcap live` runs a **dedupe pass** by default that drops those echoes,
+erring toward keeping lines; `--no-dedupe` shows the raw output. Headphones
+(even one earbud) remain the more reliable fix.
+[Capture in detail](docs/capture.md) has the tuning settings and why voice
+diarization isn't wired in.
 
 ---
 
@@ -564,8 +329,14 @@ never produces (see [Retention](#retention)).
   JSON to a single file in a `chmod 700` `$TMPDIR` directory (holding only
   that and `yap`'s stderr); every exit path — normal stop, `kill`, a crash —
   `rm -rf`s it.
-- `--out` / `--keep-json`, and `session`'s "Save the de-identified
-  transcript?" (default no), are explicit opt-ins. Those files hold PHI and are
+- **`session` only offers to save de-identified text.** Its "Save the
+  de-identified transcript?" prompt (default no) appears only after
+  redaction succeeds. The one exception is for troubleshooting: when a SOAP
+  draft comes out with no Subjective section, `session` offers (default no)
+  to save the transcript so the cause can be found, and that file is the
+  original transcript unless you de-identify it at that prompt.
+- `--out` / `--keep-json` on the command line are explicit opt-ins that
+  write exactly what was captured. All of these files hold PHI and are
   **your responsibility to delete** — `rm` on an APFS SSD doesn't overwrite
   data, so there's no "secure erase" claim here; not writing the file, or
   keeping it on an encrypted volume, is the safe path. Keep these files
@@ -614,19 +385,6 @@ never produces (see [Retention](#retention)).
 
 ## Roadmap
 
-- [x] On-device capture + speaker-attributed transcript (`live`, `transcribe`)
-- [x] `soapcap note` — local SOAP/DAP/BIRP generation via Ollama, or Bonsai via llama-server
-- [x] `soapcap session` + `soapcap.command` — guided flow, clickable launcher
-- [x] `doctor` checks chip/memory/disk and sizes model advice to them
-- [x] Single-key stop (q/x) and real pause/resume (p) while recording
-- [x] Optional gum/fzf: nicer `session` prompts, `note` file picker
-- [x] Interactive model selection/download (`soapcap model`)
-- [x] `soapcap deidentify` — best-effort local PII redaction before any hand-off
-- [ ] `--backend cloud` — POST the de-identified transcript to a
-      BAA-covered SOAP API
-- [ ] `soapcap record` — the one path that *must* keep audio briefly, for
-      Upheal (audio-only intake); capture to a temp `.m4a`, upload, delete
-- [x] Note styles — `narrative`, `structured`, `combined` (`--style`)
 - [ ] Native Swift app, replacing these scripts — in development, not yet
       available
 - [ ] Pause and speech-rate markers — yap's per-segment timestamps could
@@ -635,37 +393,19 @@ never produces (see [Retention](#retention)).
       Waiting on evidence that a small local model uses them well rather
       than over-reading them.
 
+Hand-offs to outside services are planned around de-identified output only;
+see the [de-identify helper's roadmap](tools/deidentify-helper/README.md#roadmap).
+
 ---
 
 ## Known limitations
 
-### FaceTime: no system audio, at all
-
-`soapcap` captures system audio through ScreenCaptureKit, which composites
-audio **per capturable application**. FaceTime's remote-party audio is
-rendered by `avconferenced`, a windowless background daemon invisible to
-that model — it never reaches any capture built on ScreenCaptureKit, and
-**no permission fixes this**.
-
-Not a `soapcap`/`yap`-specific bug: [BlackHole](https://github.com/ExistentialAudio/BlackHole),
-[OBS Studio](https://github.com/obsproject/obs-studio), and
-[BackgroundMusic](https://github.com/kyleneideck/BackgroundMusic) — three
-unrelated capture mechanisms — all have open issues describing the same
-FaceTime-only silence.
-
-Your own mic still works (a direct hardware tap, unaffected) — `live` shows
-`Therapist:` lines and nothing else. Got audio from neither side? That's a
-different, ordinary permission problem — run `doctor`.
-
-**Not affected**: Zoom, Meet, Teams, Doxy.me, any ordinary windowed app.
-
-No known workaround exists for FaceTime's system audio — three unrelated
-tools already failed to find one. Playing the call through speakers (not
-headphones) lets your mic pick up both sides acoustically, but with no
-system-audio channel to diarize against, it collapses to one
-undifferentiated `Therapist:` stream, unlabeled by speaker. Use
-Zoom/Meet/Teams/Doxy.me instead when a clean speaker-attributed transcript
-matters.
+**FaceTime: no system audio, at all.** FaceTime's remote-party audio never
+reaches any capture built on ScreenCaptureKit, and no permission fixes this.
+Your own mic still works, so `live` shows `Therapist:` lines and nothing
+else. Zoom, Meet, Teams, Doxy.me and any ordinary windowed app are not
+affected. [Capture in detail](docs/capture.md#facetime-no-system-audio-at-all)
+has the background.
 
 ---
 
@@ -675,7 +415,7 @@ matters.
 | --- | --- |
 | Double-clicking `soapcap.command` says it can't be opened | Gatekeeper, first run only — see [Clickable shortcut](#clickable-shortcut) for the Open Anyway steps. |
 | `doctor` WARN: no usable output | Grant **both** Microphone and Screen Recording to your terminal, then fully restart it. |
-| `live` prints a "captured your side but nothing from the other party" note | Expected on FaceTime — see [Known limitations](#facetime-no-system-audio-at-all). Not FaceTime? Check the other party's output device / volume. |
+| `live` prints a "captured your side but nothing from the other party" note | Expected on FaceTime — see [Known limitations](#known-limitations). Not FaceTime? Check the other party's output device / volume. |
 | Occasional short duplicate line (often one word) | Expected — see [Without headphones](#without-headphones). Lower `SOAPCAP_DEDUPE_MINWORDS` to `1` to also catch these, at the cost of risking a real one-word utterance. |
 | Longer duplicate lines still appear twice | Lower `SOAPCAP_DEDUPE_THRESHOLD` (e.g. `0.55`) or widen `SOAPCAP_DEDUPE_WINDOW`, or use headphones. |
 | A real Therapist line seems to have been dropped | Raise `SOAPCAP_DEDUPE_THRESHOLD` (e.g. `0.85`) or compare against `--no-dedupe`. |
