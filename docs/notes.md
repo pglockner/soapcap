@@ -53,7 +53,11 @@ BIRP note.
 ## While it drafts
 
 `note` sizes the model's context window to the transcript's length, so
-long sessions aren't silently truncated.
+long sessions aren't silently truncated. Every pass of a note uses the same
+size (a model is loaded again whenever the size changes), and every pass
+has an output cap, so a model that starts repeating itself is cut off
+rather than left running until the request times out — soapcap says so
+when a note hit the cap.
 
 While it drafts, a status line shows elapsed time, a live count of the
 tokens the model has generated (with a tokens-per-second rate), and memory
@@ -62,9 +66,11 @@ too, so it passes 100% once the Mac is swapping to make room, which slows
 drafting a lot; from 90% the line also shows swap in use. Closing other
 apps is the fix. In `session`, each finished pass keeps its line, ending
 `-- done!`, so you can see what the note cost; `note` clears it. The model
-is unloaded as soon as the note is done. Ollama models are asked not to
-"think" (`think: false`), since reasoning made notes worse in testing;
-Bonsai is the exception and keeps its thinking mode.
+is unloaded as soon as the note is done; `session` keeps it loaded until
+you've settled on a draft, so that regenerating doesn't wait for it to load
+again. Models are asked not to "think" (Ollama's `think: false`, Bonsai's
+`enable_thinking: false`): reasoning made notes worse or much slower in
+testing.
 
 ## Models
 

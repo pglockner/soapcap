@@ -192,6 +192,8 @@ To try it without a real session, use the fictional transcripts in
 each one tests, for prompt tuning and for de-identification.
 
 Other flags: `--style STYLE`, `--duration MINUTES`, `--host URL`, `--clipboard`.
+`--host` is for an Ollama on this Mac at another port; pointed at any other
+machine it sends the transcript there, and soapcap warns when it does.
 
 [Notes in detail](docs/notes.md) covers the SOAP house format (the separate
 Objective pass, the SI/HI line, Plan, the session line), the drafting status
@@ -247,6 +249,11 @@ soapcap session
 on the terminal's alternate screen buffer (see [Retention](#retention)), so
 it looks like a full-screen app and clears when you press Enter at the end.
 
+Before recording starts, `session` checks that the note model can be
+reached (Ollama running and the model pulled, or Bonsai set up). It says
+nothing when all is well; otherwise it says what to fix and asks whether to
+record anyway.
+
 1. **De-identify?** Only asked if [de-identify](#de-identify) is set
    up. One yes/no: yes redacts the transcript (the redacted text is what
    is displayed, drafted from, and copied), and redacts the drafted note
@@ -257,29 +264,41 @@ it looks like a full-screen app and clears when you press Enter at the end.
    `~/Documents`, which iCloud Drive often syncs. `note`'s file picker finds it later. It's still
    best-effort redaction, so read it before sharing and delete it when
    you're done.
-2. **Show the transcript?**
-3. **Draft a note from this?** (worded "Draft a de-identified note…" if you
-   said yes to step 1), then **Format?** (soap, dap, birp), then **Model
-   for the note?** — every installed model (pulled Ollama models, plus Bonsai if set up), with your default first. Only
-   asked when more than one is installed and `--model` wasn't given; the
-   pick applies to this session only (`soapcap model` changes the default).
-4. **This draft: keep / regenerate / discard.** `regenerate` drafts again
-   with the same model and transcript; `discard` ends with no note. `keep`
-   copies the note to the clipboard. The note opens with the session line
-   (e.g. `63 minutes, telehealth`) — recording time, pauses excluded; see
+2. **Show the transcript?** A transcript or note taller than the window
+   opens in a pager (Space or the arrow keys scroll, **q** carries on),
+   since this screen has no scrollback.
+3. **Draft a note?** (worded "Draft a de-identified note?" if you said yes
+   to step 1): **soap / dap / birp / no**, with your configured format
+   (`SOAPCAP_FORMAT`, SOAP unless you set it) first, so Enter drafts that.
+   The model is your default ([`soapcap model`](#draft-a-note)), or
+   `--model`.
+4. **This draft: copy to clipboard / regenerate / try *other model* /
+   discard.** `copy to clipboard` ends the session with the note on the
+   clipboard; `regenerate` drafts again with the same model, which stays
+   loaded meanwhile; `try …` drafts again with another installed model (one
+   is offered by name, several as `switch model`); `discard` ends with no
+   note. The note opens with the session line (e.g. `63 minutes,
+   telehealth`) — recording time, pauses excluded; see
    [Draft a note](#draft-a-note). If a SOAP draft comes out with no
    Subjective section, it first offers to **save the transcript** (default
    **no**) to `~/soapcap/transcripts` (`SOAPCAP_SAVE_DIR`) and shows the
    file in Finder. With de-identification set up, it offers to
    de-identify first; otherwise the saved file is the original transcript.
+   If drafting fails, the choices are **retry / try *other model* / copy
+   transcript / quit**, so the session isn't lost to a model that wasn't
+   running.
 
 Enter takes the default at every prompt; without
 [gum](docs/setup.md#nicer-prompts-and-file-picking), a bare first letter works too (`r`
-for regenerate, `b` for birp). `--format`, `--no-note`, and `--model` skip
-the matching prompt; `--clipboard` forces the copy on non-interactive runs.
-Every `live`/`note` flag still applies. The model is whatever
-[`soapcap model`](#draft-a-note) configured. This is what double-clicking
+for regenerate, `b` for birp). `--format` and `--no-note` skip the note
+question; `--clipboard` forces the copy on non-interactive runs. Every
+`live`/`note` flag still applies. This is what double-clicking
 `soapcap.command` runs — see [Clickable shortcut](#clickable-shortcut).
+
+To be asked less, answer the yes/no questions ahead of time in
+`~/.config/soapcap/config.sh` — `SOAPCAP_SESSION_DEIDENTIFY`,
+`SOAPCAP_SESSION_SAVE_TRANSCRIPT`, `SOAPCAP_SESSION_SHOW_TRANSCRIPT` and
+`SOAPCAP_SESSION_NOTE` each take `yes` or `no`; see `config.example.sh`.
 
 **Multiple clients in one session (couples, families):** redaction replaces
 each name with a numbered token, and the drafting model tends to write "the
@@ -290,7 +309,9 @@ who said or did what. Decline de-identification if that attribution matters.
 
 Press **p** (or space) while recording; **p** again to resume. Pausing stops
 `yap`, so nothing is captured while paused; a fresh capture starts on
-resume. Multiple cycles are stitched into one transcript, in order.
+resume. Multiple cycles are stitched into one transcript, in order, and the
+recording timer carries on from where it paused. **q** or Ctrl-C while
+paused stops for good, keeping what was recorded.
 
 Keypresses need a real terminal (`soapcap.command` and a normal interactive
 run both qualify). Backgrounded/piped invocations fall back to signal-only
@@ -331,9 +352,11 @@ diarization isn't wired in.
   listen-and-dictate` transcribes in real time and never records audio.
   Nothing to clean up, by construction.
 - **With no flags, nothing survives the run.** `yap` writes its growing
-  JSON to a single file in a `chmod 700` `$TMPDIR` directory (holding only
-  that and `yap`'s stderr); every exit path — normal stop, `kill`, a crash —
-  `rm -rf`s it.
+  JSON to a file in a `chmod 700` `$TMPDIR` directory (holding only that,
+  `yap`'s stderr, and one file per recorded leg after a pause); every exit
+  soapcap gets to act on — a normal stop, Ctrl-C, `kill`, a closed window,
+  an error — `rm -rf`s it. A `kill -9` or a power cut can't be cleaned up
+  after; `$TMPDIR/soapcap.*` is where to look.
 - **`session` only offers to save de-identified text.** Its "Save the
   de-identified transcript?" prompt (default no) appears only after
   redaction succeeds. The one exception is for troubleshooting: when a SOAP
@@ -355,7 +378,8 @@ diarization isn't wired in.
   the window-restore snapshots some terminal apps write to disk. The
   screen clears when `session` ends.
 - **`soapcap note` stays local** — the transcript goes to Ollama over
-  `localhost` only. The note is PHI exactly like the transcript: stdout by
+  `localhost` only, unless you point `--host` / `SOAPCAP_OLLAMA_HOST` at
+  another machine (soapcap warns when you have). The note is PHI exactly like the transcript: stdout by
   default, disk only with `--out`.
 - **`--clipboard` is another opt-in and another place PHI can linger** —
   most clipboard managers keep history independent of `soapcap`. Fine for a
@@ -400,6 +424,23 @@ diarization isn't wired in.
 
 Hand-offs to outside services are planned around de-identified output only;
 see the [de-identify helper's roadmap](tools/deidentify/README.md#roadmap).
+
+---
+
+## Development
+
+```sh
+test/run.sh         # the whole suite, ~1 minute; needs only bash, jq and perl
+test/linux.sh       # the same plus shellcheck, in an Ubuntu container, as CI runs it
+test/samples.sh     # drafts a note from each sample transcript with a real
+                    # model and checks its shape — run it after editing a prompt
+```
+
+`test/run.sh` never touches audio hardware, Ollama or the clipboard: it runs
+the real `bin/soapcap` against stand-ins for `yap`, `curl` and `pbcopy`
+(`test/stubs/`), both piped and on a pseudo-terminal (keypresses, pause,
+`session`'s prompts). CI runs it on Ubuntu, and also on macOS when the push
+is to GitHub.
 
 ---
 
