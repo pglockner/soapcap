@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.11 (2026-10-03)
+
+- Fixed a stop (Ctrl-C or `kill`) while paused leaving the transcript in `$TMPDIR` and discarding the session; it now stops and keeps what was recorded, and the recording timer carries on after a pause.
+- Changed `session` to check the note model before recording starts, and to offer a retry, another model, or a copy of the transcript when a draft fails.
+- Changed `session` to ask less: one question for whether and in which format to draft (your `SOAPCAP_FORMAT` first), no model question up front, and `SOAPCAP_SESSION_*` entries in `config.sh` that answer its yes/no questions ahead of time.
+- Changed the draft prompt to `copy to clipboard / regenerate / try <other model> / discard`, with the model kept loaded between drafts, and a transcript or note taller than the window paged instead of scrolling away.
+- Changed Ollama notes to use one context size for every pass and a 2000-token output cap, and to warn when `--host` points at another machine.
+- Fixed `session`'s de-identify pass over the drafted note skipping any text before a colon.
+
 ## 0.10 (2026-10-03)
 
 - Replaced the Swift de-identify helper with a Python one that doesn't need Xcode or an existing Python; set it up with `tools/deidentify/install.sh`.
