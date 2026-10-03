@@ -268,7 +268,7 @@ Other flags: `--out FILE`, `--clipboard`.
 #### Draft a note
 
 ```sh
-soapcap live | soapcap note                       # pipe straight through
+soapcap live | soapcap note                        # pipe straight through
 soapcap note ~/sessions/2026-09-10.transcript      # or from a saved file
 soapcap note --format dap --out ~/notes/draft.md   # DAP instead of SOAP
 ```
