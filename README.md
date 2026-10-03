@@ -10,6 +10,20 @@ disk**.
 `soapcap deidentify` can redact names and other identifiers first. Nothing
 leaves the machine. `soapcap session` walks through all of it with prompts.
 
+[How it works](#how-it-works) ·
+[Requirements](#requirements) ·
+[Install](#install) ·
+[Usage](#usage) ·
+[Clickable shortcut](#clickable-shortcut) ·
+[Without headphones](#without-headphones) ·
+[Retention](#retention) ·
+[Legal](#legal--read-before-first-use) ·
+[Roadmap](#roadmap) ·
+[Development](#development) ·
+[Known limitations](#known-limitations) ·
+[Troubleshooting](#troubleshooting) ·
+[Credits](#credits)
+
 ---
 
 ## How it works
@@ -480,3 +494,30 @@ has the background.
 | `note --model bonsai`: "already listening on port" | Something else is using port 18080. Stop it, or set `SOAPCAP_BONSAI_PORT` to a free port in `config.sh`. |
 | `note` with no FILE just sits there | No terminal / no fzf, so there's nothing to read or browse. Pass a file, pipe one in, or `brew install fzf`. |
 | Want Ollama to stop running | `ollama stop <model>` unloads just that model from memory (Ollama reloads it next time it's needed). To stop Ollama itself: `brew services stop ollama` if you started it that way, otherwise quit/kill the `ollama serve` process. |
+
+---
+
+## Credits
+
+soapcap is mostly glue. The real work is done by these projects:
+
+- **[yap](https://github.com/finnvoor/yap)** by Finn Voorhees does all the
+  capture and transcription, on top of Apple's SpeechAnalyzer. soapcap
+  wouldn't exist without it.
+- **[OpenMed](https://github.com/maziyarpanahi/openmed)** by Maziyar Panahi
+  provides the PII detection model behind `deidentify`, run with Apple's
+  [MLX](https://github.com/ml-explore/mlx).
+- **[gum](https://github.com/charmbracelet/gum)** by Charm draws the
+  `session` prompts, and **[fzf](https://junegunn.github.io/fzf/)** by
+  Junegunn Choi is the transcript picker in `note`.
+- **[Ollama](https://ollama.com)** runs the default note model, Meta's
+  Llama 3.1.
+- **[Bonsai](https://huggingface.co/prism-ml/Ternary-Bonsai-2-27B-gguf)**
+  by PrismML is the optional note model, run with their
+  [llama.cpp fork](https://github.com/PrismML-Eng/llama.cpp).
+- **[jq](https://jqlang.github.io/jq/)** turns `yap`'s JSON into a
+  transcript and handles every model request and response.
+- **[uv](https://docs.astral.sh/uv/)** by Astral installs the de-identify
+  helper, **[fileicon](https://github.com/mklement0/fileicon)** by Michael
+  Klement sets the shortcut icons, and [Homebrew](https://brew.sh) installs
+  the rest.
