@@ -154,8 +154,8 @@ patches.
 
 ## Roadmap
 
-These are hand-offs to services outside the Mac. They share one rule, which
-is why they live here: **only de-identified output is written to disk or
+Hand-offs to services outside the Mac follow one rule, which is why this
+lives here: **only de-identified output is written to disk or
 sent anywhere.** soapcap itself follows it already. `session` offers to save
 a transcript only after redaction succeeds, with one exception for
 troubleshooting: when a SOAP draft comes out with no Subjective section, it
@@ -165,8 +165,3 @@ you accept, so the cause can be found.
 - [ ] `--backend cloud` — POST the de-identified transcript to a
       BAA-covered SOAP API. Refuses a transcript that hasn't been through
       this helper.
-- [ ] `soapcap record` — audio intake for services that take audio only
-      (e.g. Upheal). Audio can't be de-identified, so this is the one item
-      that doesn't fit the rule as written: it would have to keep a
-      temporary `.m4a`, upload it, and delete it. Not to be built until
-      that is settled.
