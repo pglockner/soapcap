@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Fake `pbcopy` for soapcap's flow tests (test/flow.sh): the "clipboard" is
+# the file named by STUB_CLIPBOARD, so a test can read what was copied (and
+# so a test run never touches the real clipboard).
+cat > "${STUB_CLIPBOARD:-/dev/null}"

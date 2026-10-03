@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Fixture tests for soapcap: pure text-transformation logic (dedupe, run
 # merging, note safety nets, de-identify plumbing), then flow tests
-# (test/flow.sh) that run the real bin/soapcap against fake yap and curl
-# (test/stubs/). Not covered: real audio, macOS permissions, the Ollama models
-# themselves, and doctor.
+# (test/flow.sh) that run the real bin/soapcap against fake yap, curl and
+# pbcopy (test/stubs/), both off a terminal and on one. Not covered: real
+# audio, macOS permissions, the models themselves (test/samples.sh runs a
+# real one over the sample transcripts), doctor, and install.sh.
 #
 # Run with: test/run.sh
 # Exits non-zero if anything fails, so it's usable from CI.
@@ -157,12 +158,11 @@ Homework: practice the breathing exercise daily." "$result"
 #
 # These test the bash plumbing around the de-identify helper (label
 # strip/reattach, exit-code handling, fail-closed behavior) using stub
-# scripts standing in for the real helper -- the same technique
-# used to stub sc_capture_session elsewhere. The model's actual
-# detection accuracy (does it correctly tag a name/phone/address in real
-# English dialogue) is NOT something this harness can or should test --
-# see ~/.config/soapcap/sample-transcripts/ for that manual acceptance
-# pass, run by hand against the documented PII inventory per file.
+# scripts standing in for the real helper. The model's actual detection
+# accuracy (does it correctly tag a name/phone/address in real English
+# dialogue) is NOT something this harness can or should test -- that is a
+# manual acceptance pass over samples/transcripts/, against the PII
+# inventory its README lists for each file.
 
 SOAPCAP_DEIDENTIFY_BIN="/nonexistent/soapcap-deidentify-helper"
 sc_deidentify_transcript "Therapist: Hi Sarah, how are you"
@@ -209,6 +209,17 @@ Client: second line here."
 assert_eq "deidentify: speaker label never sent to the helper, multi-line reassembly correct" \
   "Sarah: HI THERE, WITH CAMILA.
 Client: SECOND LINE HERE." "$SC_DEIDENTIFY_TRANSCRIPT"
+rm -f "$stub"
+
+# A note has no speaker labels: nothing before a colon may be skipped.
+stub=$(mktemp)
+printf '#!/usr/bin/env bash\ntr "[:lower:]" "[:upper:]"\necho "redacted 0 span(s)" >&2\n' > "$stub"; chmod +x "$stub"
+SOAPCAP_DEIDENTIFY_BIN="$stub"
+sc_deidentify_transcript "PLAN:
+Camila will call on Friday: she agreed." note
+assert_eq "deidentify: in a note, the text before a colon is redacted too" \
+  "PLAN:
+CAMILA WILL CALL ON FRIDAY: SHE AGREED." "$SC_DEIDENTIFY_TRANSCRIPT"
 rm -f "$stub"
 
 # --- structured style: rendering (lib/structured/render.jq) -------------
@@ -351,6 +362,10 @@ long=$(awk 'BEGIN{for(i=0;i<22000;i++)printf "w "}')
 assert_eq "ctx cap: a 9000-word prompt fits" fits "$(sc_ctx_exceeds_cap "$short" 1024 && echo over || echo fits)"
 assert_eq "ctx cap: a 22000-word prompt does not" over "$(sc_ctx_exceeds_cap "$long" 1024 && echo over || echo fits)"
 
+assert_eq "ctx size: never below the floor" "4096" "$(sc_estimate_ctx "one two" 1024 4096)"
+assert_eq "ctx size: 1.5 tokens a word plus headroom, rounded up to 1024s" "16384" "$(sc_estimate_ctx "$short" 2048 0)"
+assert_eq "ctx size: capped at 32768" "32768" "$(sc_estimate_ctx "$long" 2048 0)"
+
 # --- sc_subjective_missing ----------------------------------------------
 
 miss() { printf '%b' "$1" | sc_subjective_missing && echo missing || echo present; }
@@ -487,8 +502,10 @@ rm -f "$mutated"
 # --- de-identify helper's text logic (tools/deidentify/deidentify.py) ------
 # Rules, chunking and substitution only; the model isn't loaded.
 if command -v python3 >/dev/null 2>&1; then
-  assert_eq "deidentify.py: text-logic unit tests" "0" \
-    "$(python3 "$here/test/deidentify.py" >/dev/null 2>&1; echo $?)"
+  FLOW_ERR=$(python3 "$here/test/deidentify.py" 2>&1); rc=$?
+  assert_eq "deidentify.py: text-logic unit tests" "0" "$rc"
+else
+  echo "skip deidentify.py: text-logic unit tests (python3 isn't installed)"
 fi
 
 echo

@@ -1,8 +1,9 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154  # $here comes from test/run.sh
-# Flow tests: run the real bin/soapcap end to end against fake `yap` and
-# `curl` (test/stubs/), so capture, stop-signal handling, note generation and
-# `session` are exercised without audio hardware or Ollama. Sourced by
+# Flow tests: run the real bin/soapcap end to end against fake `yap`, `curl`
+# and `pbcopy` (test/stubs/), so capture, stop-signal handling, note
+# generation and `session` are exercised without audio hardware or Ollama --
+# off a terminal (flow_run) and on one (flow_tty). Sourced by
 # test/run.sh, which provides $here, the assert_* helpers and the pass/fail
 # counters.
 #
@@ -13,7 +14,7 @@
 FLOW_DIR=$(mktemp -d)
 FLOW_BIN="$FLOW_DIR/bin"
 mkdir -p "$FLOW_BIN" "$FLOW_DIR/home" "$FLOW_DIR/tmp"
-cp "$here/test/stubs/yap" "$here/test/stubs/curl" "$here/test/stubs/llama-server" "$FLOW_BIN/"
+cp "$here/test/stubs/yap" "$here/test/stubs/curl" "$here/test/stubs/llama-server" "$here/test/stubs/pbcopy" "$FLOW_BIN/"
 ln -s "$(command -v jq)" "$FLOW_BIN/jq"
 : > "$FLOW_DIR/bonsai.gguf"
 BONSAI_ENV=(SOAPCAP_BONSAI_SERVER="$FLOW_BIN/llama-server" SOAPCAP_BONSAI_GGUF="$FLOW_DIR/bonsai.gguf")
@@ -24,29 +25,51 @@ BONSAI_ENV=(SOAPCAP_BONSAI_SERVER="$FLOW_BIN/llama-server" SOAPCAP_BONSAI_GGUF="
 # SIGNAL goes to the soapcap script's own pid only -- the way the window
 # app stops it. Sets FLOW_OUT, FLOW_ERR, FLOW_RC; stdin comes from
 # $FLOW_STDIN (default /dev/null).
+# The environment every run gets: the stubs' log files and nothing of the
+# developer's own.
+FLOW_ENV=(PATH="$FLOW_BIN:/usr/bin:/bin" HOME="$FLOW_DIR/home" TMPDIR="$FLOW_DIR/tmp"
+  STUB_YAP_LOG="$FLOW_DIR/yap.log" STUB_CURL_LOG="$FLOW_DIR/curl.log"
+  STUB_CURL_PAYLOAD="$FLOW_DIR/payload.json" STUB_LLAMA_LOG="$FLOW_DIR/llama.log"
+  STUB_CURL_ARGS="$FLOW_DIR/curl.args" STUB_CURL_PAYLOG="$FLOW_DIR/payloads.jsonl"
+  STUB_STRUCT_COUNT="$FLOW_DIR/struct.count" STUB_CLIPBOARD="$FLOW_DIR/clipboard")
+
+flow_reset() {
+  : > "$FLOW_DIR/yap.log"; : > "$FLOW_DIR/curl.log"; : > "$FLOW_DIR/llama.log"; : > "$FLOW_DIR/curl.args"
+  : > "$FLOW_DIR/payloads.jsonl"
+  rm -f "$FLOW_DIR/payload.json" "$FLOW_DIR/first.json" "$FLOW_DIR/out" "$FLOW_DIR/err" \
+    "$FLOW_DIR/struct.count" "$FLOW_DIR/clipboard"
+}
+
+# Reaps what a run left behind and reads its logs.
+flow_finish() {
+  pkill -f "$FLOW_BIN/yap" 2>/dev/null   # reap a stub left behind by a killed run
+  sleep 0.2   # let a signalled stub llama-server log that it stopped
+  FLOW_LLAMA_LEFT=$(pgrep -f "$FLOW_BIN/llama-server" | wc -l | tr -d ' ')
+  pkill -f "$FLOW_BIN/llama-server" 2>/dev/null
+  # The first request (payload.json holds only the last one): the note
+  # itself, ahead of SOAP's Objective pass.
+  head -n 1 "$FLOW_DIR/payloads.jsonl" > "$FLOW_DIR/first.json"
+}
+
 flow_run() {
   local sig="$1"; shift
   local envs=()
   while [ "$1" != "--" ]; do envs+=("$1"); shift; done
   shift
-  : > "$FLOW_DIR/yap.log"; : > "$FLOW_DIR/curl.log"; : > "$FLOW_DIR/llama.log"; : > "$FLOW_DIR/curl.args"
-  : > "$FLOW_DIR/payloads.jsonl"
-  rm -f "$FLOW_DIR/payload.json" "$FLOW_DIR/first.json" "$FLOW_DIR/out" "$FLOW_DIR/err" "$FLOW_DIR/struct.count"
+  flow_reset
 
   # A job started with & from a non-interactive shell begins with SIGINT
   # ignored (so it couldn't trap it); a terminal's Ctrl-C isn't. perl resets
   # SIGINT to its default and then exec()s soapcap, same pid throughout.
   # shellcheck disable=SC2016  # $SIG is a perl variable, not a shell one
-  env -i PATH="$FLOW_BIN:/usr/bin:/bin" HOME="$FLOW_DIR/home" TMPDIR="$FLOW_DIR/tmp" \
-    STUB_YAP_LOG="$FLOW_DIR/yap.log" STUB_CURL_LOG="$FLOW_DIR/curl.log" \
-    STUB_CURL_PAYLOAD="$FLOW_DIR/payload.json" STUB_LLAMA_LOG="$FLOW_DIR/llama.log" \
-    STUB_CURL_ARGS="$FLOW_DIR/curl.args" STUB_CURL_PAYLOG="$FLOW_DIR/payloads.jsonl" \
-    STUB_STRUCT_COUNT="$FLOW_DIR/struct.count" \
+  env -i "${FLOW_ENV[@]}" \
     ${envs[@]+"${envs[@]}"} \
     /usr/bin/perl -e '$SIG{INT} = "DEFAULT"; exec @ARGV' "$here/bin/soapcap" "$@" \
     <"${FLOW_STDIN:-/dev/null}" >"$FLOW_DIR/out" 2>"$FLOW_DIR/err" &
   local pid=$!
-  ( sleep 20; kill -KILL "$pid" 2>/dev/null ) &
+  # (Detached from stdout: the sleep outlives the watchdog, and would hold a
+  # pipe the suite's output goes down open until it ends.)
+  ( sleep 20; kill -KILL "$pid" 2>/dev/null ) >/dev/null 2>&1 &
   local watchdog=$!
 
   if [ "$sig" != none ]; then
@@ -60,14 +83,81 @@ flow_run() {
   fi
   wait "$pid" 2>/dev/null; FLOW_RC=$?
   kill "$watchdog" 2>/dev/null; wait "$watchdog" 2>/dev/null
-  pkill -f "$FLOW_BIN/yap" 2>/dev/null   # reap a stub left behind by a killed run
-  sleep 0.2   # let a signalled stub llama-server log that it stopped
-  FLOW_LLAMA_LEFT=$(pgrep -f "$FLOW_BIN/llama-server" | wc -l | tr -d ' ')
-  pkill -f "$FLOW_BIN/llama-server" 2>/dev/null
+  flow_finish
   FLOW_OUT=$(cat "$FLOW_DIR/out"); FLOW_ERR=$(cat "$FLOW_DIR/err")
-  # The first request (payload.json holds only the last one): the note
-  # itself, ahead of SOAP's Objective pass.
-  head -n 1 "$FLOW_DIR/payloads.jsonl" > "$FLOW_DIR/first.json"
+}
+
+# flow_tty [VAR=VALUE ...] -- soapcap ARGS... <<STEPS
+# The same, on a pseudo-terminal (script(1)), so the paths that need a real
+# terminal run: keypresses while recording, the pause, and session's prompts.
+# STEPS, one per line, are "TEXT<tab>KEYS": once TEXT appears in what soapcap
+# has printed since the last step, KEYS are typed (printf %b escapes: \n is
+# Enter, \003 Ctrl-C). A step whose TEXT never appears is recorded in
+# FLOW_STUCK and ends the run. FLOW_ROWS sets the terminal's height (default
+# 60, tall enough that nothing is paged). Sets FLOW_OUT (everything the
+# terminal showed, stdout and stderr together) and FLOW_RC; FLOW_ERR is
+# empty.
+flow_tty() {
+  local envs=()
+  while [ "$1" != "--" ]; do envs+=("$1"); shift; done
+  shift
+  flow_reset
+  FLOW_STUCK=""; FLOW_ERR=""
+
+  # soapcap's exit status goes to a file: util-linux's script reports 130
+  # for any run it relayed a Ctrl-C to, whatever the command returned. The
+  # wrapper has its own (empty) SIGINT handler so that Ctrl-C doesn't end it.
+  rm -f "$FLOW_DIR/tty.rc"
+  {
+    echo '#!/usr/bin/env bash'
+    echo 'trap : INT'
+    echo "stty rows ${FLOW_ROWS:-60} cols 100"
+    printf 'env -i TERM=xterm'
+    printf ' %q' "${FLOW_ENV[@]}" ${envs[@]+"${envs[@]}"} "$here/bin/soapcap" "$@"
+    echo
+    printf 'echo $? > %q\n' "$FLOW_DIR/tty.rc"
+  } > "$FLOW_DIR/tty.sh"
+  chmod +x "$FLOW_DIR/tty.sh"
+  : > "$FLOW_DIR/keys"
+
+  # BSD script takes the command as arguments, util-linux's as -c STRING.
+  # perl resets SIGINT as in flow_run, so a typed Ctrl-C reaches soapcap.
+  # Keys reach script down a pipe from `tail -f` on a plain file: macOS's
+  # script refuses a FIFO as its stdin.
+  local cmd=(script -q /dev/null "$FLOW_DIR/tty.sh")
+  if script --version 2>&1 | grep -q util-linux; then
+    cmd=(script -qec "$FLOW_DIR/tty.sh" /dev/null)
+  fi
+  # shellcheck disable=SC2016  # $SIG is a perl variable, not a shell one
+  tail -f "$FLOW_DIR/keys" 2>/dev/null \
+    | /usr/bin/perl -e '$SIG{INT} = "DEFAULT"; exec @ARGV' "${cmd[@]}" >"$FLOW_DIR/out" 2>&1 &
+  local pid=$!
+  ( sleep 30; kill -KILL "$pid" 2>/dev/null ) >/dev/null 2>&1 &
+  local watchdog=$!
+
+  local text keys seen=0 i
+  while IFS=$'\t' read -r text keys; do
+    i=0
+    until tail -c "+$((seen + 1))" "$FLOW_DIR/out" | LC_ALL=C grep -qF -- "$text"; do
+      i=$((i + 1))
+      if [ "$i" -gt 100 ] || ! kill -0 "$pid" 2>/dev/null; then
+        FLOW_STUCK="$text"; break 2
+      fi
+      sleep 0.1
+    done
+    seen=$(wc -c < "$FLOW_DIR/out" | tr -d ' ')
+    printf '%b' "$keys" >> "$FLOW_DIR/keys"
+  done
+  [ -n "$FLOW_STUCK" ] && kill -KILL "$pid" 2>/dev/null
+  # `wait` would wait for the whole pipeline, and tail never ends by itself:
+  # once script has gone, one more byte makes tail write to a closed pipe.
+  while kill -0 "$pid" 2>/dev/null; do sleep 0.1; done
+  echo >> "$FLOW_DIR/keys"
+  wait "$pid" 2>/dev/null
+  FLOW_RC=$(cat "$FLOW_DIR/tty.rc" 2>/dev/null || echo killed)
+  kill "$watchdog" 2>/dev/null; wait "$watchdog" 2>/dev/null
+  flow_finish
+  FLOW_OUT=$(LC_ALL=C tr -d '\r' < "$FLOW_DIR/out")
 }
 
 expected_transcript="Therapist: How have you been sleeping
@@ -429,6 +519,179 @@ assert_not_contains "session: no alternate-screen codes when output isn't a term
 flow_run none STUB_YAP_MODE=permission -- session --no-note
 assert_eq "session: a capture failure exits non-zero" "1" "$FLOW_RC"
 assert_contains "session: a capture failure says so" "$FLOW_ERR" "no audio captured"
+
+# --- transcribe, deidentify (end to end) ----------------------------------
+
+: > "$FLOW_DIR/call.m4a"
+flow_run none -- transcribe "$FLOW_DIR/call.m4a" --locale en-GB
+assert_eq "transcribe: prints the recording's transcript" "Speaker: A recorded line" "$FLOW_OUT"
+assert_contains "transcribe: the file and locale reach yap" "$(cat "$FLOW_DIR/yap.log")" \
+  "transcribe $FLOW_DIR/call.m4a --json --locale en-GB"
+
+# Stand-ins for the de-identify helper: one upper-cases what it is given (so
+# anything it was sent is recognizable), one fails.
+printf '#!/usr/bin/env bash\ntr "[:lower:]" "[:upper:]"\necho "redacted 2 span(s)" >&2\n' > "$FLOW_BIN/deid-ok"
+printf '#!/usr/bin/env bash\ncat\necho "boom" >&2\nexit 1\n' > "$FLOW_BIN/deid-fail"
+chmod +x "$FLOW_BIN/deid-ok" "$FLOW_BIN/deid-fail"
+FLOW_STDIN="$FLOW_DIR/transcript.txt"
+printf 'Therapist: hi\nClient: hello\n' > "$FLOW_STDIN"
+
+flow_run none SOAPCAP_DEIDENTIFY_BIN="$FLOW_BIN/deid-ok" -- deidentify
+assert_eq "deidentify: redacts what was said, never the speaker labels" "Therapist: HI
+Client: HELLO" "$FLOW_OUT"
+flow_run none SOAPCAP_DEIDENTIFY_BIN="$FLOW_BIN/deid-fail" -- deidentify
+assert_eq "deidentify: a failed helper exits non-zero" "1" "$FLOW_RC"
+assert_eq "deidentify: ...and prints nothing, not even what the helper wrote" "" "$FLOW_OUT"
+
+# --- one context size per note, an output cap, the host check -------------
+
+awk 'BEGIN { for (i = 0; i < 150; i++) print "Client: one two three four five six seven eight nine ten eleven twelve" }' > "$FLOW_DIR/long.txt"
+FLOW_STDIN="$FLOW_DIR/long.txt" flow_run none -- note --style combined
+assert_eq "context: all three passes of a note ask for the same num_ctx (no reload between them)" "1" \
+  "$(jq -r '.options.num_ctx' "$FLOW_DIR/payloads.jsonl" | sort -u | wc -l | tr -d ' ')"
+assert_eq "context: ...big enough for the largest pass and its output cap" "yes" \
+  "$(jq -s -r '[.[] | (.prompt | split(" ") | length) + .options.num_predict <= .options.num_ctx] | all' "$FLOW_DIR/payloads.jsonl" | yesno)"
+assert_eq "note: the narrative pass has an output cap" "2000" "$(jq -r '.options.num_predict' "$FLOW_DIR/first.json")"
+
+flow_run none -- note --host http://10.0.0.5:11434
+assert_contains "host: a host that isn't this Mac gets a warning" "$FLOW_ERR" "http://10.0.0.5:11434 is not this Mac"
+assert_eq "host: ...once, not once per pass" "1" "$(printf '%s\n' "$FLOW_ERR" | grep -c 'is not this Mac')"
+flow_run none -- note --host http://127.0.0.1:11434
+assert_not_contains "host: a loopback host gets none" "$FLOW_ERR" "is not this Mac"
+
+# --- config ---------------------------------------------------------------
+
+printf 'SOAPCAP_FORMAT=""\nSOAPCAP_MODEL=""\n' > "$FLOW_DIR/blank.sh"
+flow_run none SOAPCAP_CONFIG="$FLOW_DIR/blank.sh" -- note
+assert_eq "config: a blank entry means the default (SOAP, llama3.1:8b)" "$(head -1 "$here/prompts/soap.md") llama3.1:8b" \
+  "$(jq -r '(.prompt | split("\n")[0]) + " " + .model' "$FLOW_DIR/first.json")"
+
+SOAPCAP_CONFIG="$FLOW_DIR/model.sh"
+sc_save_model_config bonsai
+assert_eq "model config: created when there is no config yet" 'SOAPCAP_MODEL="bonsai"' "$(cat "$SOAPCAP_CONFIG")"
+printf '# mine\nSOAPCAP_MODEL="old"\nSOAPCAP_LOCALE="en-US"\n' > "$SOAPCAP_CONFIG"
+sc_save_model_config llama3.1:8b
+assert_eq "model config: an existing entry is replaced where it stands" '# mine
+SOAPCAP_MODEL="llama3.1:8b"
+SOAPCAP_LOCALE="en-US"' "$(cat "$SOAPCAP_CONFIG")"
+unset SOAPCAP_CONFIG
+
+# --- session: settled before the recording starts -------------------------
+
+FLOW_STDIN=""
+
+flow_run none -- session --format bogus
+assert_contains "session: an unknown format is named" "$FLOW_ERR" "unknown format 'bogus'"
+assert_eq "session: ...before capture starts" "" "$(cat "$FLOW_DIR/yap.log")"
+
+flow_run TERM STUB_OLLAMA_MODE=down -- session --format soap
+assert_contains "session: a model that can't draft is reported before recording" \
+  "$(printf '%s\n' "$FLOW_ERR" | sed '/recording\|Transcript:/q')" "can't reach Ollama"
+assert_contains "session: ...and the recording still happens" "$FLOW_OUT" "Client: Not great this week"
+
+flow_run TERM SOAPCAP_DEIDENTIFY_BIN="$FLOW_BIN/deid-ok" SOAPCAP_SESSION_DEIDENTIFY=yes -- session --format soap
+assert_contains "session: config can answer the de-identify question (transcript redacted)" "$FLOW_OUT" "Client: NOT GREAT THIS WEEK"
+assert_contains "session: ...and the note is redacted too" "$FLOW_OUT" "STUB NOTE"
+assert_eq "session: ...but nothing is saved without a yes" "0" \
+  "$(find "$FLOW_DIR/home" -name '*.transcript' | wc -l | tr -d ' ')"
+
+# --- on a terminal: keypresses, pause, session's prompts ------------------
+# (flow_tty: the paths that only run when stdin is a real terminal.)
+
+tab=$'\t'
+both_legs="Therapist: How have you been sleeping
+Client: Not great this week
+Therapist: How have you been sleeping
+Client: Not great this week"
+
+flow_tty -- live <<STEPS
+recording${tab}p
+paused${tab}p
+recording${tab}q
+STEPS
+assert_eq "tty: every step's prompt appeared" "" "$FLOW_STUCK"
+assert_contains "pause: both legs are in the transcript, in order" "$FLOW_OUT" "$both_legs"
+
+flow_tty -- live <<STEPS
+recording${tab}p
+paused${tab}\003
+STEPS
+assert_contains "pause: Ctrl-C while paused stops, and still delivers the transcript" "$FLOW_OUT" "$expected_transcript"
+assert_eq "pause: ...exiting 0" "0" "$FLOW_RC"
+assert_eq "pause: ...with nothing left in TMPDIR" "0" \
+  "$(find "$FLOW_DIR/tmp" -mindepth 1 | wc -l | tr -d ' ')"
+
+# Enter at every prompt: show the transcript, draft in the configured
+# format, copy the draft.
+flow_tty SOAPCAP_FORMAT=dap -- session <<STEPS
+recording${tab}q
+Show the transcript?${tab}\n
+Draft a note?${tab}\n
+This draft:${tab}\n
+Press Enter${tab}\n
+STEPS
+assert_eq "session: every prompt appeared, in order" "" "$FLOW_STUCK"
+assert_eq "session: Enter drafts in the configured format, not always SOAP" "$(head -1 "$here/prompts/dap.md")" \
+  "$(jq -r '.prompt | split("\n")[0]' "$FLOW_DIR/first.json")"
+assert_contains "session: Enter at the draft copies the note to the clipboard" "$(cat "$FLOW_DIR/clipboard")" "under 1 minute, telehealth
+
+SUBJECTIVE:
+Stub note"
+assert_contains "session: says it was copied, once, with the paste hint" "$FLOW_OUT" "Copied — Cmd-V to paste"
+assert_not_contains "session: ...not twice" "$FLOW_OUT" "(copied to clipboard)"
+assert_not_contains "session: no model question up front" "$FLOW_OUT" "Model for the note?"
+
+flow_tty "${BONSAI_ENV[@]}" -- session <<STEPS
+recording${tab}q
+Show the transcript?${tab}n\n
+Draft a note?${tab}b\n
+This draft:${tab}r\n
+This draft:${tab}t\n
+This draft:${tab}c\n
+Press Enter${tab}\n
+STEPS
+assert_eq "session: regenerate, then another model: every prompt appeared" "" "$FLOW_STUCK"
+assert_not_contains "session: a declined transcript isn't shown" "$FLOW_OUT" "----- transcript -----"
+assert_eq "session: regenerate drafts again with the model still loaded (unloaded only after draft 2)" "2" \
+  "$(awk '/api\/generate/ { drafts++ } /^unload/ { print drafts; exit }' "$FLOW_DIR/curl.log")"
+assert_contains "session: the other installed model is offered by name" "$FLOW_OUT" "[t]ry bonsai"
+assert_eq "session: switching unloads the first model before the second drafts" "unload llama3.1:8b" \
+  "$(grep -B1 -m1 '/health' "$FLOW_DIR/curl.log" | head -n 1)"
+assert_contains "session: the kept draft is the second model's" "$(cat "$FLOW_DIR/clipboard")" "Bonsai stub note"
+assert_eq "session: ...whose server is stopped at the end" "stopped 0" "$(tail -n 1 "$FLOW_DIR/llama.log") $FLOW_LLAMA_LEFT"
+
+flow_tty STUB_OLLAMA_MODE=error -- session <<STEPS
+recording${tab}q
+Show the transcript?${tab}n\n
+Draft a note?${tab}\n
+No note was drafted:${tab}c\n
+Press Enter${tab}\n
+STEPS
+assert_eq "session: a failed draft offers a way out" "" "$FLOW_STUCK"
+assert_eq "session: ...copying the transcript, so the session isn't lost" "$expected_transcript" "$(cat "$FLOW_DIR/clipboard")"
+
+flow_tty STUB_OLLAMA_MODE=down -- session <<STEPS
+Start recording anyway?${tab}n\n
+Press Enter${tab}\n
+STEPS
+assert_contains "session: a model that can't draft is flagged before recording" "$FLOW_OUT" "can't reach Ollama"
+assert_eq "session: ...and declining never starts the recording" "" "$(cat "$FLOW_DIR/yap.log")"
+
+if command -v less >/dev/null 2>&1; then
+  FLOW_ROWS=12 flow_tty -- session --format soap <<STEPS
+recording${tab}q
+Show the transcript?${tab}n\n
+q to continue${tab}q
+This draft:${tab}d\n
+Press Enter${tab}\n
+STEPS
+  assert_eq "session: a note taller than the window is paged, not scrolled away" "" "$FLOW_STUCK"
+  assert_eq "session: ...on the same full screen (it is left once, at the end)" "1" \
+    "$(printf '%s' "$FLOW_OUT" | grep -o "$(printf '\033')\[?1049l" | wc -l | tr -d ' ')"
+  assert_eq "session: discard copies nothing" "no" "$([ -e "$FLOW_DIR/clipboard" ] && echo yes || echo no)"
+else
+  echo "skip session: paging (less isn't installed)"
+fi
 
 # --- misc ----------------------------------------------------------------
 
