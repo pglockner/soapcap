@@ -1,0 +1,8 @@
+# Commits matching these regexes are left out of CHANGELOG.md
+^Bump version
+bump to \d
+^README
+^CI:
+^tests?[:/]
+^Fix shellcheck
+^Update CHANGELOG
