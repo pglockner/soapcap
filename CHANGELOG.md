@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9 (2026-10-03)
+
+- Moved the experimental window app out of this repository; it is now the seed of a separate Swift rewrite, which is in development.
+- Shortened the README and moved detail into `docs/` (notes, setup, capture).
+- Stated what `session` offers to save: de-identified transcripts only, except the troubleshooting save when a SOAP draft has no Subjective.
+- Moved the cloud hand-off roadmap item to the de-identify helper's README and dropped the audio-recording item.
+- Split `lib/commands.sh` into one file per command, with no behavior change.
+
 ## 0.8 (2026-09-28 – 2026-10-01)
 
 - Changed the note format to a therapist's SOAP layout, with a mental-status Objective section, a session line, and saved transcripts.
