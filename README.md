@@ -48,7 +48,7 @@ with any conferencing tool.
 ```sh
 git clone https://github.com/pglockner/soapcap.git
 cd soapcap
-./install.sh          # brew install yap jq (force-linked — macOS 26 ships
+./install.sh           # brew install yap jq (force-linked — macOS 26 ships
                        # its own /usr/bin/jq, which can otherwise shadow
                        # Homebrew's), symlink onto PATH, run doctor,
                        # offer a Desktop shortcut + gum + fzf, then ask
@@ -91,7 +91,97 @@ Optional config: `cp config.example.sh ~/.config/soapcap/config.sh` and edit
 
 ## Usage
 
-### Live session
+### Guided session
+
+```sh
+soapcap session
+```
+
+`session` is the place to start, and it is what double-clicking
+`soapcap.command` runs (see [Clickable shortcut](#clickable-shortcut)). It
+captures live, then walks through the rest with prompts. Start your call
+and turn on Do Not Disturb first; the recording keys are the ones described
+under [Capture](#capture). It runs on the terminal's alternate screen
+buffer (see [Retention](#retention)), so it looks like a full-screen app
+and clears when you press Enter at the end.
+
+Before recording starts, `session` checks that the note model can be
+reached (Ollama running and the model pulled, or Bonsai set up). It says
+nothing when all is well; otherwise it says what to fix and asks whether to
+record anyway.
+
+1. **De-identify?** Only asked if [de-identify](#de-identify) is set
+   up. One yes/no: yes redacts the transcript (the redacted text is what
+   is displayed, drafted from, and copied), and redacts the drafted note
+   again before it's shown. If redaction succeeds, it then asks **Save the
+   de-identified transcript?** (default **no**). Yes writes it to
+   `~/soapcap/transcripts/<date>-<time>.deid.transcript`
+   (`SOAPCAP_SAVE_DIR`), readable only by you. Deliberately not
+   `~/Documents`, which iCloud Drive often syncs. `note`'s file picker finds it later. It's still
+   best-effort redaction, so read it before sharing and delete it when
+   you're done.
+2. **Show the transcript?** A transcript or note taller than the window
+   opens in a pager (Space or the arrow keys scroll, **q** carries on),
+   since this screen has no scrollback.
+3. **Draft a note?** (worded "Draft a de-identified note?" if you said yes
+   to step 1): **soap / dap / birp / no**, with your configured format
+   (`SOAPCAP_FORMAT`, SOAP unless you set it) first, so Enter drafts that.
+   The model is your default ([`soapcap model`](#draft-a-note)), or
+   `--model`.
+4. **This draft: copy to clipboard / regenerate / try *other model* /
+   discard.** `copy to clipboard` ends the session with the note on the
+   clipboard; `regenerate` drafts again with the same model, which stays
+   loaded meanwhile; `try …` drafts again with another installed model (one
+   is offered by name, several as `switch model`); `discard` ends with no
+   note. The note opens with the session line (e.g. `63 minutes,
+   telehealth`) — recording time, pauses excluded; see
+   [Draft a note](#draft-a-note). If a SOAP draft comes out with no
+   Subjective section, it first offers to **save the transcript** (default
+   **no**) to `~/soapcap/transcripts` (`SOAPCAP_SAVE_DIR`) and shows the
+   file in Finder. With de-identification set up, it offers to
+   de-identify first; otherwise the saved file is the original transcript.
+   If drafting fails, the choices are **retry / try *other model* / copy
+   transcript / quit**, so the session isn't lost to a model that wasn't
+   running.
+
+Enter takes the default at every prompt; without
+[gum](docs/setup.md#nicer-prompts-and-file-picking), a bare first letter works too (`r`
+for regenerate, `b` for birp). `--format` and `--no-note` skip the note
+question; `--clipboard` forces the copy on non-interactive runs. Every
+`live`/`note` flag still applies.
+
+To be asked less, answer the yes/no questions ahead of time in
+`~/.config/soapcap/config.sh` — `SOAPCAP_SESSION_DEIDENTIFY`,
+`SOAPCAP_SESSION_SAVE_TRANSCRIPT`, `SOAPCAP_SESSION_SHOW_TRANSCRIPT` and
+`SOAPCAP_SESSION_NOTE` each take `yes` or `no`; see `config.example.sh`.
+
+**Multiple clients in one session (couples, families):** redaction replaces
+each name with a numbered token, and the drafting model tends to write "the
+client" or "the couple" rather than track who is who, so the note may lose
+who said or did what. Decline de-identification if that attribution matters.
+
+### The commands behind `session`
+
+`session` does the work of three commands, in order, and adds the prompts
+between them. Each one also works by itself and prints its result to the
+terminal; `deidentify` and `note` take a transcript from a file or a pipe.
+Use them that way to script a run, or to come back to a saved transcript
+later.
+
+```sh
+soapcap live | soapcap deidentify | soapcap note
+```
+
+| Command | What it does |
+|---|---|
+| [`live`](#capture) | Captures the call and your microphone and prints a transcript. |
+| [`deidentify`](#de-identify) | Optional. Replaces names and other identifiers with placeholders. |
+| [`note`](#draft-a-note) | Drafts a SOAP, DAP or BIRP note from a transcript with a local model. |
+
+[`transcribe`](#existing-recording) stands in for `live` when you already
+have a recording.
+
+#### Capture
 
 ```sh
 soapcap live
@@ -123,17 +213,59 @@ soapcap live --out ~/sessions/2026-09-10.transcript
 Other flags: `--mic-label`, `--system-label`, `--locale`, `--keep-json FILE`
 (also save the raw `yap` JSON with timestamps), `--clipboard`.
 
-### Existing recording
+#### Pause/resume
+
+Press **p** (or space) while recording; **p** again to resume. Pausing stops
+`yap`, so nothing is captured while paused; a fresh capture starts on
+resume. Multiple cycles are stitched into one transcript, in order, and the
+recording timer carries on from where it paused. **q** or Ctrl-C while
+paused stops for good, keeping what was recorded.
+
+Keypresses need a real terminal (`soapcap.command` and a normal interactive
+run both qualify). Backgrounded/piped invocations fall back to signal-only
+control — Ctrl-C / `kill -TERM` to stop, no pause.
+
+#### De-identify
 
 ```sh
-soapcap transcribe recording.m4a
-soapcap transcribe recording.m4a --out out.transcript
+soapcap live | soapcap deidentify | soapcap note
+soapcap deidentify ~/sessions/2026-09-10.transcript --out ~/sessions/2026-09-10.deid.transcript
 ```
 
-For a file you already have (e.g. a QuickTime capture or a test clip). No speaker separation — single audio track, every line is
-`Speaker:`.
+Runs a transcript through a small **on-device** PII detection model
+([OpenMed](https://github.com/maziyarpanahi/openmed)'s, via Apple's MLX
+runtime — Apple Silicon only, same as the rest of soapcap) and replaces
+detected names, phone numbers, emails, addresses, and similar identifiers
+with consistent bracketed placeholders (`[FIRST_NAME_1]`, `[PHONE_1]`, …) —
+the same person or detail gets the same placeholder everywhere it's tagged,
+so a note drafted from the result still reads coherently. Speaker labels
+(`Therapist:`/`Client:`) are never touched, even if a label happens to be
+someone's real name.
 
-### Draft a note
+It's an optional extra. `install.sh` offers to set it up, or run it any time:
+
+```sh
+tools/deidentify/install.sh    # ~700MB, a few minutes; needs no Python or
+                               # Xcode, and installs into
+                               # ~/.local/share/soapcap/deidentify
+```
+
+The install downloads the model once (no transcript data involved). After
+that, de-identifying never uses the network. Details are in the
+[helper's README](tools/deidentify/README.md).
+
+**This is a best-effort pass, not a certified de-identification.** It
+redacts what the model tags, plus a few narrow rules (month names, numbers
+of seven or more digits, and repeats of a name it already tagged; see
+[the helper's README](tools/deidentify/README.md#rule-based-detections)),
+and nothing more — a missed mention
+stays in the output verbatim, and the output is still confidential
+clinical material. Read it before sending it anywhere. See
+[Legal](#legal--read-before-first-use).
+
+Other flags: `--out FILE`, `--clipboard`.
+
+#### Draft a note
 
 ```sh
 soapcap live | soapcap note                       # pipe straight through
@@ -180,123 +312,15 @@ machine it sends the transcript there, and soapcap warns when it does.
 Objective pass, the SI/HI line, Plan, the session line), the drafting status
 line, setting up Bonsai, other models, and the note styles.
 
-### De-identify
+#### Existing recording
 
 ```sh
-soapcap live | soapcap deidentify | soapcap note
-soapcap deidentify ~/sessions/2026-09-10.transcript --out ~/sessions/2026-09-10.deid.transcript
+soapcap transcribe recording.m4a
+soapcap transcribe recording.m4a --out out.transcript
 ```
 
-Runs a transcript through a small **on-device** PII detection model
-([OpenMed](https://github.com/maziyarpanahi/openmed)'s, via Apple's MLX
-runtime — Apple Silicon only, same as the rest of soapcap) and replaces
-detected names, phone numbers, emails, addresses, and similar identifiers
-with consistent bracketed placeholders (`[FIRST_NAME_1]`, `[PHONE_1]`, …) —
-the same person or detail gets the same placeholder everywhere it's tagged,
-so a note drafted from the result still reads coherently. Speaker labels
-(`Therapist:`/`Client:`) are never touched, even if a label happens to be
-someone's real name.
-
-It's an optional extra. `install.sh` offers to set it up, or run it any time:
-
-```sh
-tools/deidentify/install.sh    # ~700MB, a few minutes; needs no Python or
-                               # Xcode, and installs into
-                               # ~/.local/share/soapcap/deidentify
-```
-
-The install downloads the model once (no transcript data involved). After
-that, de-identifying never uses the network. Details are in the
-[helper's README](tools/deidentify/README.md).
-
-**This is a best-effort pass, not a certified de-identification.** It
-redacts what the model tags, plus a few narrow rules (month names, numbers
-of seven or more digits, and repeats of a name it already tagged; see
-[the helper's README](tools/deidentify/README.md#rule-based-detections)),
-and nothing more — a missed mention
-stays in the output verbatim, and the output is still confidential
-clinical material. Read it before sending it anywhere. See
-[Legal](#legal--read-before-first-use).
-
-Other flags: `--out FILE`, `--clipboard`.
-
-### Guided session
-
-```sh
-soapcap session
-```
-
-`session` captures live, then walks through the rest with prompts. It runs
-on the terminal's alternate screen buffer (see [Retention](#retention)), so
-it looks like a full-screen app and clears when you press Enter at the end.
-
-Before recording starts, `session` checks that the note model can be
-reached (Ollama running and the model pulled, or Bonsai set up). It says
-nothing when all is well; otherwise it says what to fix and asks whether to
-record anyway.
-
-1. **De-identify?** Only asked if [de-identify](#de-identify) is set
-   up. One yes/no: yes redacts the transcript (the redacted text is what
-   is displayed, drafted from, and copied), and redacts the drafted note
-   again before it's shown. If redaction succeeds, it then asks **Save the
-   de-identified transcript?** (default **no**). Yes writes it to
-   `~/soapcap/transcripts/<date>-<time>.deid.transcript`
-   (`SOAPCAP_SAVE_DIR`), readable only by you. Deliberately not
-   `~/Documents`, which iCloud Drive often syncs. `note`'s file picker finds it later. It's still
-   best-effort redaction, so read it before sharing and delete it when
-   you're done.
-2. **Show the transcript?** A transcript or note taller than the window
-   opens in a pager (Space or the arrow keys scroll, **q** carries on),
-   since this screen has no scrollback.
-3. **Draft a note?** (worded "Draft a de-identified note?" if you said yes
-   to step 1): **soap / dap / birp / no**, with your configured format
-   (`SOAPCAP_FORMAT`, SOAP unless you set it) first, so Enter drafts that.
-   The model is your default ([`soapcap model`](#draft-a-note)), or
-   `--model`.
-4. **This draft: copy to clipboard / regenerate / try *other model* /
-   discard.** `copy to clipboard` ends the session with the note on the
-   clipboard; `regenerate` drafts again with the same model, which stays
-   loaded meanwhile; `try …` drafts again with another installed model (one
-   is offered by name, several as `switch model`); `discard` ends with no
-   note. The note opens with the session line (e.g. `63 minutes,
-   telehealth`) — recording time, pauses excluded; see
-   [Draft a note](#draft-a-note). If a SOAP draft comes out with no
-   Subjective section, it first offers to **save the transcript** (default
-   **no**) to `~/soapcap/transcripts` (`SOAPCAP_SAVE_DIR`) and shows the
-   file in Finder. With de-identification set up, it offers to
-   de-identify first; otherwise the saved file is the original transcript.
-   If drafting fails, the choices are **retry / try *other model* / copy
-   transcript / quit**, so the session isn't lost to a model that wasn't
-   running.
-
-Enter takes the default at every prompt; without
-[gum](docs/setup.md#nicer-prompts-and-file-picking), a bare first letter works too (`r`
-for regenerate, `b` for birp). `--format` and `--no-note` skip the note
-question; `--clipboard` forces the copy on non-interactive runs. Every
-`live`/`note` flag still applies. This is what double-clicking
-`soapcap.command` runs — see [Clickable shortcut](#clickable-shortcut).
-
-To be asked less, answer the yes/no questions ahead of time in
-`~/.config/soapcap/config.sh` — `SOAPCAP_SESSION_DEIDENTIFY`,
-`SOAPCAP_SESSION_SAVE_TRANSCRIPT`, `SOAPCAP_SESSION_SHOW_TRANSCRIPT` and
-`SOAPCAP_SESSION_NOTE` each take `yes` or `no`; see `config.example.sh`.
-
-**Multiple clients in one session (couples, families):** redaction replaces
-each name with a numbered token, and the drafting model tends to write "the
-client" or "the couple" rather than track who is who, so the note may lose
-who said or did what. Decline de-identification if that attribution matters.
-
-### Pause/resume
-
-Press **p** (or space) while recording; **p** again to resume. Pausing stops
-`yap`, so nothing is captured while paused; a fresh capture starts on
-resume. Multiple cycles are stitched into one transcript, in order, and the
-recording timer carries on from where it paused. **q** or Ctrl-C while
-paused stops for good, keeping what was recorded.
-
-Keypresses need a real terminal (`soapcap.command` and a normal interactive
-run both qualify). Backgrounded/piped invocations fall back to signal-only
-control — Ctrl-C / `kill -TERM` to stop, no pause.
+For a file you already have (e.g. a QuickTime capture or a test clip). No speaker separation — single audio track, every line is
+`Speaker:`.
 
 ---
 
