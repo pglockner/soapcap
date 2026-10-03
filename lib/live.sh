@@ -1,6 +1,30 @@
 # shellcheck shell=bash
 # soapcap live and soapcap transcribe — capture a transcript.
 
+# sc_capture_tips — the reminders shown before a recording starts.
+sc_capture_tips() {
+  sc_info "  • Use headphones so your mic does not pick up the other party."
+  sc_info "  • Turn on Do Not Disturb; system audio capture records the whole mix."
+  if [ -t 0 ]; then
+    sc_info "  • q or Ctrl-C to stop, p to pause (nothing is captured while paused)."
+  else
+    sc_info "  • Press Ctrl-C when the session ends."
+  fi
+  sc_info ""
+}
+
+# sc_capture_checked MIC SYS LOCALE — records until stopped (sc_capture_session)
+# and leaves yap's JSON in SC_JSON; exits with an actionable message when
+# nothing, or no speech, was captured.
+sc_capture_checked() {
+  if ! sc_capture_session "$1" "$2" "$3"; then
+    sc_die "no audio captured. Run 'soapcap doctor' to check permissions."
+  fi
+  if ! printf '%s' "$SC_JSON" | jq -e '(.segments | length) > 0' >/dev/null 2>&1; then
+    sc_die "capture produced no speech segments. Check mic/output routing and permissions."
+  fi
+}
+
 sc_cmd_live() {
   local out="" keepjson="" dedupe=1 clipboard=0
   local mic="$SOAPCAP_MIC_LABEL" sys="$SOAPCAP_SYSTEM_LABEL" locale="$SOAPCAP_LOCALE"
@@ -21,25 +45,11 @@ sc_cmd_live() {
   sc_need yap; sc_need jq
 
   sc_info "soapcap live — on-device capture"
-  sc_info "  • Use headphones so your mic does not pick up the other party."
-  sc_info "  • Turn on Do Not Disturb; system audio capture records the whole mix."
-  if [ -t 0 ]; then
-    sc_info "  • q or Ctrl-C to stop, p to pause (nothing is captured while paused)."
-  else
-    sc_info "  • Press Ctrl-C when the session ends."
-  fi
-  sc_info ""
-
-  if ! sc_capture_session "$mic" "$sys" "$locale"; then
-    sc_die "no audio captured. Run 'soapcap doctor' to check permissions."
-  fi
-  if ! printf '%s' "$SC_JSON" | jq -e '(.segments | length) > 0' >/dev/null 2>&1; then
-    sc_die "capture produced no speech segments. Check mic/output routing and permissions."
-  fi
+  sc_capture_tips
+  sc_capture_checked "$mic" "$sys" "$locale"
 
   if [ -n "$keepjson" ]; then
-    mkdir -p "$(dirname "$keepjson")"
-    printf '%s\n' "$SC_JSON" > "$keepjson"
+    sc_write_file "$keepjson" "$SC_JSON" || sc_die "couldn't write $keepjson"
     sc_info "raw JSON written to: $keepjson  (contains PHI)"
   fi
 
@@ -48,8 +58,7 @@ sc_cmd_live() {
     || sc_die "failed to render transcript from yap JSON"
 
   if [ -n "$out" ]; then
-    mkdir -p "$(dirname "$out")"
-    printf '%s\n' "$transcript" > "$out"
+    sc_write_file "$out" "$transcript" || sc_die "couldn't write $out"
     sc_info "transcript written to: $out  (contains PHI — delete when done)"
   else
     printf '%s\n' "$transcript"
@@ -112,8 +121,7 @@ sc_cmd_transcribe() {
   json=$(yap "${yargs[@]}") || sc_die "yap transcribe failed"
 
   if [ -n "$keepjson" ]; then
-    mkdir -p "$(dirname "$keepjson")"
-    printf '%s\n' "$json" > "$keepjson"
+    sc_write_file "$keepjson" "$json" || sc_die "couldn't write $keepjson"
   fi
 
   local transcript
@@ -121,8 +129,7 @@ sc_cmd_transcribe() {
     || sc_die "failed to render transcript"
 
   if [ -n "$out" ]; then
-    mkdir -p "$(dirname "$out")"
-    printf '%s\n' "$transcript" > "$out"
+    sc_write_file "$out" "$transcript" || sc_die "couldn't write $out"
     sc_info "transcript written to: $out"
   else
     printf '%s\n' "$transcript"

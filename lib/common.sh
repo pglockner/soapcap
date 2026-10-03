@@ -121,18 +121,32 @@ sc_alt_screen_stop() {
 # when stdout is a terminal, and unchanged otherwise (a pipe, a redirect).
 # Display only: callers keep TEXT itself unwrapped for --out and the
 # clipboard, so a pasted note keeps one line per paragraph.
+#
+# On session's full-screen display there is no scrollback, so text taller
+# than the window would lose its top: that goes through `less` instead, kept
+# on the same screen (-X) and barred from writing a history file or running
+# anything (LESSHISTFILE, LESSSECURE).
 sc_show() {
-  # The width comes from the terminal itself (stty on /dev/tty): tput trusts
+  # The size comes from the terminal itself (stty on /dev/tty): tput trusts
   # a COLUMNS variable over it, and a stale one wrapped at 80 in a wider pane.
-  local w=0
+  local size="" rows=0 w=0 text
   if [ -t 1 ]; then
-    w=$(stty size </dev/tty 2>/dev/null | awk '{print $2}')
+    size=$(stty size </dev/tty 2>/dev/null)
+    rows=${size% *}; w=${size#* }
     [ "${w:-0}" -gt 0 ] 2>/dev/null || w=$(tput cols 2>/dev/null)
   fi
-  if [ "${w:-0}" -ge 20 ] 2>/dev/null; then
-    printf '%s\n' "$1" | fold -s -w "$w"
-  else
+  if ! [ "${w:-0}" -ge 20 ] 2>/dev/null; then
     printf '%s\n' "$1"
+    return
+  fi
+  text=$(printf '%s\n' "$1" | fold -s -w "$w")
+  if [ "${SC_ALT_SCREEN:-0}" = "1" ] && [ "${rows:-0}" -gt 5 ] 2>/dev/null \
+       && command -v less >/dev/null 2>&1 \
+       && [ "$(printf '%s\n' "$text" | wc -l)" -gt $((rows - 3)) ]; then
+    printf '%s\n' "$text" | LESS="" LESSHISTFILE=- LESSSECURE=1 \
+      less -X -P'?eEnd -- press q to continue:Space or the arrow keys scroll -- q to continue'
+  else
+    printf '%s\n' "$text"
   fi
 }
 
@@ -284,8 +298,8 @@ USAGE
                                   local PII redaction (needs tools/deidentify/install.sh)
   soapcap model [--host URL]      Show/pick the model session & note default
                                   to (llama3.1:8b or bonsai)
-  soapcap session [opts]          Guided: capture, then ask about a note and
-                                  the clipboard — what soapcap.command runs
+  soapcap session [opts]          Guided: capture, then offer to de-identify
+                                  and draft a note — what soapcap.command runs
   soapcap version | help
 
 WHILE RECORDING (live / session, when run from a real terminal)
@@ -317,6 +331,8 @@ OPTIONS (note only)
 
 OPTIONS (session only)
   --no-note              Skip drafting a note; just capture and print
+  session's questions can be answered ahead of time in config.sh
+  (SOAPCAP_SESSION_*) — see config.example.sh
 
 OPTIONS (deidentify)
   --out FILE            Write the de-identified transcript to FILE (default: stdout)

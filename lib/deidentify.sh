@@ -47,7 +47,7 @@ sc_deidentify_transcript() {
 $transcript
 TRANSCRIPT
 
-  local errfile; errfile=$(mktemp) || { sc_err "could not create a temp file"; return 1; }
+  local errfile; sc_tmpfile errfile || return 1
   local redacted_body rc
   redacted_body=$(printf '%s' "$body_blob" | "$bin" 2>"$errfile")
   rc=$?
@@ -85,9 +85,9 @@ REDACTED
 #
 # Reads a transcript (FILE, or stdin so it composes with `live`/`note`,
 # e.g. `soapcap live | soapcap deidentify | soapcap note`) and runs it
-# through sc_deidentify_transcript(). Mirrors sc_cmd_note's FILE/stdin/
-# --out/picker conventions, minus --model/--format/--host -- there's one
-# fixed detection model, no catalog to choose from.
+# through sc_deidentify_transcript(). Takes its input the way `note` does
+# (sc_read_transcript); there's one fixed detection model, so no
+# --model/--format/--host.
 sc_cmd_deidentify() {
   local file="" out="" clipboard=0
   while [ $# -gt 0 ]; do
@@ -100,20 +100,8 @@ sc_cmd_deidentify() {
     esac
   done
 
-  local transcript
-  if [ -n "$file" ]; then
-    [ -f "$file" ] || sc_die "no such file: $file"
-    transcript=$(cat "$file")
-  elif [ -t 0 ]; then
-    file=$(sc_pick_transcript_file) \
-      || sc_die "deidentify: no FILE given and nothing piped in. Pass a file, pipe a transcript in, or install fzf to browse for one (brew install fzf)."
-    [ -n "$file" ] || sc_die "deidentify: no file selected"
-    [ -f "$file" ] || sc_die "no such file: $file"
-    transcript=$(cat "$file")
-  else
-    transcript=$(cat)
-  fi
-  [ -n "$transcript" ] || sc_die "deidentify: empty transcript (pass a file, or pipe one in via stdin)"
+  sc_read_transcript deidentify "$file"
+  local transcript="$SC_INPUT"
 
   # No pipefail is set (bin/soapcap: set -u only), but none is needed:
   # sc_die below exits before anything reaches this command's stdout, so
@@ -125,8 +113,7 @@ sc_cmd_deidentify() {
   sc_info "$SC_DEIDENTIFY_SUMMARY"
 
   if [ -n "$out" ]; then
-    mkdir -p "$(dirname "$out")"
-    printf '%s\n' "$redacted" > "$out"
+    sc_write_file "$out" "$redacted" || sc_die "couldn't write $out"
     sc_info "de-identified transcript written to: $out — best-effort only, review before treating as safe to share (see README \"De-identify\")"
   else
     printf '%s\n' "$redacted"

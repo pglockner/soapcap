@@ -30,7 +30,16 @@ SOAPCAP_LOCALE=""
 #                                   # see README "Note style"; combined takes
 #                                   # roughly twice as long, and the window
 #                                   # app doesn't show its review yet
-# SOAPCAP_OLLAMA_HOST="http://localhost:11434"
+# SOAPCAP_OLLAMA_HOST="http://localhost:11434"   # any other machine gets the
+#                                   # transcript over the network (soapcap
+#                                   # warns when it isn't this Mac)
+
+# `session` asks a few yes/no questions each time. Answer any of them here
+# ("yes" or "no") and it stops asking that one; leave it out to be asked.
+# SOAPCAP_SESSION_DEIDENTIFY="yes"        # de-identify the transcript and note
+# SOAPCAP_SESSION_SAVE_TRANSCRIPT="no"    # save the de-identified transcript
+# SOAPCAP_SESSION_SHOW_TRANSCRIPT="no"    # print the transcript
+# SOAPCAP_SESSION_NOTE="yes"              # draft a note, in SOAPCAP_FORMAT
 
 # The note's first line, e.g. "63 minutes, telehealth". session fills in
 # the minutes from recording time (pauses excluded); note takes --duration.
