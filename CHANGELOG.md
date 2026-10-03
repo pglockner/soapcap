@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.12 (2026-10-03)
+
+- Changed `note` to check each prose draft for a missing section, or one that is empty or just "Not addressed in this session", and to draft again up to `SOAPCAP_NOTE_ATTEMPTS` times (default 3), keeping the draft with the fewest faults and warning when it is still incomplete.
+- Changed that check to count only a missing section for a transcript under 150 words, and to give a transcript with no client lines a single draft.
+
 ## 0.11 (2026-10-03)
 
 - Fixed a stop (Ctrl-C or `kill`) while paused leaving the transcript in `$TMPDIR` and discarding the session; it now stops and keeps what was recorded, and the recording timer carries on after a pause.
