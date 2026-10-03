@@ -132,12 +132,11 @@ sc_cmd_doctor() {
     sc_info "        install with: brew install fzf"
   fi
   if [ -x "$SOAPCAP_DEIDENTIFY_BIN" ] && "$SOAPCAP_DEIDENTIFY_BIN" --version >/dev/null 2>&1; then
-    sc_info "  ok    de-identify helper built and runs ($SOAPCAP_DEIDENTIFY_BIN)"
+    sc_info "  ok    de-identify helper set up and runs ($SOAPCAP_DEIDENTIFY_BIN)"
   else
-    sc_info "  --    de-identify helper not built — only needed for 'soapcap deidentify'"
+    sc_info "  --    de-identify helper not set up — only needed for 'soapcap deidentify'"
     sc_info "        (and the optional note de-identify offer in 'soapcap session')"
-    sc_info "        build with: cd tools/deidentify-helper && swift build -c release"
-    sc_info "        (or re-run install.sh)"
+    sc_info "        set up with: tools/deidentify/install.sh (or re-run install.sh)"
   fi
 
   sc_info ""

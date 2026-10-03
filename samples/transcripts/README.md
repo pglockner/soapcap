@@ -147,7 +147,7 @@ behavioral experiment for a family wedding.
   four"), an insurer, a named work account and an employer mentioned via
   HR, plus family and clinician names. Also "the number ending in 0199", a bare four-digit reference
   that the rules deliberately don't cover (see
-  `tools/deidentify-helper/README.md`).
+  `tools/deidentify/README.md`).
 
 ### 07 — couples session, single audio source (9 min)
 

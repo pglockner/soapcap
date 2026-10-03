@@ -21,16 +21,12 @@ SOAPCAP_SESSION_TYPE="${SOAPCAP_SESSION_TYPE:-telehealth}"
 # note's file picker skips.
 SOAPCAP_SAVE_DIR="${SOAPCAP_SAVE_DIR:-$HOME/soapcap/transcripts}"
 
-# `deidentify` (local PII redaction via tools/deidentify-helper, built
-# opt-in by install.sh — see README "De-identify"). SC_ROOT is set by
-# bin/soapcap before this file is sourced, but test/run.sh sources this
-# file directly without ever setting SC_ROOT — the inner ${SC_ROOT:-}
-# guard is required, not decorative: without it this line hard-fails
-# under test/run.sh's `set -u` the instant this file is sourced. No
-# separate on/off toggle exists — the binary's absence is the toggle;
-# sc_deidentify_transcript fails closed with an actionable message when
-# it's missing.
-SOAPCAP_DEIDENTIFY_BIN="${SOAPCAP_DEIDENTIFY_BIN:-${SC_ROOT:-}/tools/deidentify-helper/.build/release/soapcap-deidentify-helper}"
+# `deidentify` (local PII redaction, set up opt-in by tools/deidentify/
+# install.sh — see README "De-identify"). No separate on/off toggle exists —
+# the helper's absence is the toggle; sc_deidentify_transcript fails closed
+# with an actionable message when it's missing.
+SOAPCAP_DEIDENTIFY_DIR="${SOAPCAP_DEIDENTIFY_DIR:-$HOME/.local/share/soapcap/deidentify}"
+SOAPCAP_DEIDENTIFY_BIN="${SOAPCAP_DEIDENTIFY_BIN:-$SOAPCAP_DEIDENTIFY_DIR/soapcap-deidentify-helper}"
 
 _sc_cfg="${SOAPCAP_CONFIG:-$HOME/.config/soapcap/config.sh}"
 # shellcheck source=/dev/null
@@ -269,7 +265,7 @@ USAGE
   soapcap note [FILE] [opts]      Transcript (FILE or stdin) -> SOAP/DAP/BIRP note
                                   via a local model
   soapcap deidentify [FILE] [opts]   Transcript (FILE or stdin) -> best-effort
-                                  local PII redaction (needs tools/deidentify-helper)
+                                  local PII redaction (needs tools/deidentify/install.sh)
   soapcap model [--host URL]      Show/pick the model session & note default
                                   to (llama3.1:8b or bonsai)
   soapcap session [opts]          Guided: capture, then ask about a note and

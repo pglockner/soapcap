@@ -155,10 +155,10 @@ Homework: practice the breathing exercise daily." "$result"
 
 # --- sc_deidentify_transcript --------------------------------------------
 #
-# These test the bash plumbing around tools/deidentify-helper (label
+# These test the bash plumbing around the de-identify helper (label
 # strip/reattach, exit-code handling, fail-closed behavior) using stub
-# scripts standing in for the real Swift binary -- the same technique
-# used to stub sc_capture_session elsewhere. OpenMedKit's actual
+# scripts standing in for the real helper -- the same technique
+# used to stub sc_capture_session elsewhere. The model's actual
 # detection accuracy (does it correctly tag a name/phone/address in real
 # English dialogue) is NOT something this harness can or should test --
 # see ~/.config/soapcap/sample-transcripts/ for that manual acceptance
@@ -483,6 +483,13 @@ rm -f "$mutated"
 
 # shellcheck source=test/flow.sh
 . "$here/test/flow.sh"
+
+# --- de-identify helper's text logic (tools/deidentify/deidentify.py) ------
+# Rules, chunking and substitution only; the model isn't loaded.
+if command -v python3 >/dev/null 2>&1; then
+  assert_eq "deidentify.py: text-logic unit tests" "0" \
+    "$(python3 "$here/test/deidentify.py" >/dev/null 2>&1; echo $?)"
+fi
 
 echo
 echo "$pass passed, $fail failed"

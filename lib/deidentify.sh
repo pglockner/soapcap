@@ -3,8 +3,8 @@
 
 # sc_deidentify_transcript TRANSCRIPT
 #
-# Runs TRANSCRIPT through tools/deidentify-helper (OpenMedKit's on-device
-# Privacy Filter model) and replaces detected PII with consistent,
+# Runs TRANSCRIPT through the de-identify helper (tools/deidentify: OpenMed's
+# on-device PII model) and replaces detected PII with consistent,
 # category-numbered bracket tokens ([FIRST_NAME_1], [PHONE_1], ...) --
 # the helper does the actual detection and substitution; this function
 # only strips/reattaches speaker labels around it. Deliberately does NOT
@@ -24,8 +24,7 @@ sc_deidentify_transcript() {
 
   if [ ! -x "$bin" ]; then
     sc_err "de-identify helper not found or not executable: $bin"
-    sc_err "build it with: cd \"${SC_ROOT:-.}/tools/deidentify-helper\" && swift build -c release"
-    sc_err "(or re-run install.sh and accept the de-identification helper offer)"
+    sc_err "set it up with: ${SC_ROOT:-.}/tools/deidentify/install.sh"
     return 1
   fi
 
@@ -56,7 +55,7 @@ TRANSCRIPT
 
   if [ "$rc" -eq 2 ]; then
     sc_err "de-identify model weights unavailable: $helper_stderr"
-    sc_err "check your network connection and try again (one-time download)"
+    sc_err "re-run ${SC_ROOT:-.}/tools/deidentify/install.sh to download them"
     return 1
   elif [ "$rc" -ne 0 ]; then
     sc_err "de-identify helper failed: $helper_stderr"

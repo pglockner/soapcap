@@ -227,53 +227,24 @@ if [ -n "$new_default" ]; then
 fi
 
 deidentify_ready=0
-if [ -t 0 ] && [ ! -x "$here/tools/deidentify-helper/.build/release/soapcap-deidentify-helper" ]; then
-  # Confirmed on two separate machines: plain Xcode Command Line Tools is
-  # NOT enough here (mlx-swift's Metal shaders need the Metal Toolchain
-  # component, and xcodebuild -downloadComponent itself refuses to run
-  # under a CLT-only selection -- "requires Xcode"). Rather than trying
-  # to fix any of this interactively (a full Xcode install is a multi-GB,
-  # App-Store-gated thing install.sh has no business attempting), just
-  # check and point to the real requirements table.
-  deidentify_missing=""
-  command -v swift >/dev/null 2>&1 || deidentify_missing="${deidentify_missing}swift "
-  case "$(xcode-select -p 2>/dev/null)" in
-    *CommandLineTools|"") deidentify_missing="${deidentify_missing}full-Xcode " ;;
+deidentify_dir="${SOAPCAP_DEIDENTIFY_DIR:-$HOME/.local/share/soapcap/deidentify}"
+if [ -x "$deidentify_dir/soapcap-deidentify-helper" ]; then
+  deidentify_ready=1
+elif [ -t 0 ]; then
+  echo
+  printf "Set up local de-identification (soapcap deidentify — on-device PII redaction; ~700MB, a few minutes)? [Y/n] "
+  ans=""
+  read -r ans || true
+  case "$ans" in
+    n|N|no|No) : ;;
+    *)
+      if "$here/tools/deidentify/install.sh"; then
+        deidentify_ready=1
+      else
+        echo "==> De-identification setup failed. Re-run it any time: tools/deidentify/install.sh"
+      fi
+      ;;
   esac
-  # `xcrun --find metal` only locates a binary -- on a CLT-only-turned-full-Xcode
-  # machine it can find a stub that itself refuses to run until the Metal
-  # Toolchain component is actually downloaded. Invoke it for real instead.
-  xcrun metal --version >/dev/null 2>&1 || deidentify_missing="${deidentify_missing}Metal-Toolchain "
-
-  if [ -n "$deidentify_missing" ]; then
-    echo
-    echo "==> Skipping the local de-identification helper (soapcap deidentify) —"
-    echo "    missing: $deidentify_missing"
-    echo "    See tools/deidentify-helper/README.md \"Requirements\" for what each"
-    echo "    one needs and how much effort it is (full Xcode, not just Command"
-    echo "    Line Tools, is the big one). Re-run install.sh once they're in"
-    echo "    place, or build by hand later: cd tools/deidentify-helper && swift build -c release"
-  else
-    echo
-    printf "Build the local de-identification helper (soapcap deidentify — Swift + OpenMedKit, on-device PII redaction)? [Y/n] "
-    ans=""
-    read -r ans || true
-    case "$ans" in
-      n|N|no|No) : ;;
-      *)
-        echo "==> Building tools/deidentify-helper (swift build -c release)…"
-        if (cd "$here/tools/deidentify-helper" && swift build -c release); then
-          deidentify_ready=1
-          echo "==> Built. Warming up (downloads the privacy-filter model's weights once, no transcript data involved)…"
-          "$here/tools/deidentify-helper/.build/release/soapcap-deidentify-helper" <<<"warm up" >/dev/null 2>&1 || true
-        else
-          echo "==> Build failed. If the error mentions a license, run: sudo xcodebuild -license accept"
-          echo "    Otherwise see tools/deidentify-helper/README.md \"Requirements\", then re-run"
-          echo "    install.sh, or build by hand: cd tools/deidentify-helper && swift build -c release"
-        fi
-        ;;
-    esac
-  fi
 fi
 
 next_msg="
@@ -299,12 +270,12 @@ fi
 if [ "$deidentify_ready" -ne 1 ]; then
   next_msg="$next_msg
 
-To build the (optional) local de-identification helper later:
-  cd tools/deidentify-helper && swift build -c release"
+To set up (optional) local de-identification later:
+  tools/deidentify/install.sh"
 fi
 next_msg="$next_msg
 
 Optional extras (each README lists requirements and steps):
   tools/bonsai/install.sh    Bonsai note model (slower, more careful; ~6GB)
-  tools/deidentify-helper/   local PII redaction (needs full Xcode)"
+  tools/deidentify/install.sh   local PII redaction (~700MB)"
 printf '%s\n' "$next_msg"

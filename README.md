@@ -205,26 +205,31 @@ soapcap deidentify ~/sessions/2026-09-10.transcript --out ~/sessions/2026-09-10.
 ```
 
 Runs a transcript through a small **on-device** PII detection model
-([OpenMedKit](https://github.com/maziyarpanahi/openmed)'s Privacy Filter,
-via Apple's MLX runtime — Apple Silicon only, same as the rest of
-soapcap) and replaces detected names, phone numbers, emails, addresses,
-and similar identifiers with consistent bracketed placeholders
-(`[FIRST_NAME_1]`, `[PHONE_1]`, …) — the same person or detail gets the
-same placeholder everywhere it's tagged, so a note drafted from the
-result still reads coherently. Speaker labels (`Therapist:`/`Client:`)
-are never touched, even if a label happens to be someone's real name.
+([OpenMed](https://github.com/maziyarpanahi/openmed)'s, via Apple's MLX
+runtime — Apple Silicon only, same as the rest of soapcap) and replaces
+detected names, phone numbers, emails, addresses, and similar identifiers
+with consistent bracketed placeholders (`[FIRST_NAME_1]`, `[PHONE_1]`, …) —
+the same person or detail gets the same placeholder everywhere it's tagged,
+so a note drafted from the result still reads coherently. Speaker labels
+(`Therapist:`/`Client:`) are never touched, even if a label happens to be
+someone's real name.
 
-Needs the `tools/deidentify-helper` Swift binary, which takes full Xcode
-(not just Command Line Tools) to build. `install.sh` checks the requirements
-and offers to build it; the
-[helper's README](tools/deidentify-helper/README.md#requirements) lists them
-and the by-hand build. The first real run downloads the model's weights
-(one-time, no transcript data involved).
+It's an optional extra. `install.sh` offers to set it up, or run it any time:
+
+```sh
+tools/deidentify/install.sh    # ~700MB, a few minutes; needs no Python or
+                               # Xcode, and installs into
+                               # ~/.local/share/soapcap/deidentify
+```
+
+The install downloads the model once (no transcript data involved). After
+that, de-identifying never uses the network. Details are in the
+[helper's README](tools/deidentify/README.md).
 
 **This is a best-effort pass, not a certified de-identification.** It
-redacts what OpenMedKit's model tags, plus two narrow pattern rules (month
-names and numbers of seven or more digits; see
-[the helper's README](tools/deidentify-helper/README.md#rule-based-detections)),
+redacts what the model tags, plus a few narrow rules (month names, numbers
+of seven or more digits, and repeats of a name it already tagged; see
+[the helper's README](tools/deidentify/README.md#rule-based-detections)),
 and nothing more — a missed mention
 stays in the output verbatim, and the output is still confidential
 clinical material. Read it before sending it anywhere. See
@@ -242,8 +247,8 @@ soapcap session
 on the terminal's alternate screen buffer (see [Retention](#retention)), so
 it looks like a full-screen app and clears when you press Enter at the end.
 
-1. **De-identify?** Only asked if the [de-identify](#de-identify) helper is
-   built. One yes/no: yes redacts the transcript (the redacted text is what
+1. **De-identify?** Only asked if [de-identify](#de-identify) is set
+   up. One yes/no: yes redacts the transcript (the redacted text is what
    is displayed, drafted from, and copied), and redacts the drafted note
    again before it's shown. If redaction succeeds, it then asks **Save the
    de-identified transcript?** (default **no**). Yes writes it to
@@ -265,7 +270,7 @@ it looks like a full-screen app and clears when you press Enter at the end.
    [Draft a note](#draft-a-note). If a SOAP draft comes out with no
    Subjective section, it first offers to **save the transcript** (default
    **no**) to `~/soapcap/transcripts` (`SOAPCAP_SAVE_DIR`) and shows the
-   file in Finder. With the de-identify helper built, it offers to
+   file in Finder. With de-identification set up, it offers to
    de-identify first; otherwise the saved file is the original transcript.
 
 Enter takes the default at every prompt; without
@@ -394,7 +399,7 @@ diarization isn't wired in.
       than over-reading them.
 
 Hand-offs to outside services are planned around de-identified output only;
-see the [de-identify helper's roadmap](tools/deidentify-helper/README.md#roadmap).
+see the [de-identify helper's roadmap](tools/deidentify/README.md#roadmap).
 
 ---
 

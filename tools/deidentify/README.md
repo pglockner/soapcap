@@ -1,37 +1,42 @@
-# soapcap-deidentify-helper
+# soapcap de-identify helper
 
-The Swift half of `soapcap deidentify` — see the main [README](../../README.md#de-identify)
-for what it does and how to use it from soapcap itself. This file is just
-the build command and the stdin/stdout contract the bash layer
-(`sc_deidentify_transcript` in `lib/deidentify.sh`) depends on.
+The half of `soapcap deidentify` that finds and replaces identifiers — see
+the main [README](../../README.md#de-identify) for what it does and how to
+use it from soapcap. It is a short Python program (`deidentify.py`) running
+[OpenMed](https://github.com/maziyarpanahi/openmed)'s on-device PII model
+through Apple's MLX runtime, plus a few deterministic rules.
 
-## Requirements
-
-Confirmed on two separate machines, not assumed — **plain Xcode Command
-Line Tools alone is not enough.** `install.sh` checks all of these before
-offering to build, and points here (rather than trying to fix them
-itself) if any are missing:
-
-| Requirement | Manual install | Effort |
-|---|---|---|
-| macOS 26+, Apple Silicon | Same as the rest of soapcap — nothing extra | — |
-| **Full Xcode.app** (not just Command Line Tools) | App Store (free), or a signed-in download from developer.apple.com | Large — ~4GB installed (this machine; varies by Xcode version), needs an Apple ID signed in to the App Store, can take a while on a slow connection |
-| Xcode set as the active developer directory | `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` | One command, only needed if a CLT-only install was active before |
-| Xcode's license accepted | Open Xcode.app once (GUI) — it prompts for the license on first launch. It also offers to install additional components/simulators; decline, they're not needed for this build. | One-time GUI step, a couple minutes. `sudo xcodebuild -license accept` works too if you'd rather not open the GUI. |
-| Metal Toolchain component | `xcodebuild -downloadComponent MetalToolchain` (requires the two rows above first — this command itself refuses to run under a CLT-only selection) | One command, ~840MB one-time download |
-| `git` | Comes bundled with Xcode automatically | None, once Xcode is installed |
-| Network access to `github.com` | — | Needed once, to fetch OpenMedKit and its dependencies via Swift Package Manager during the build |
-| Network access to `huggingface.co` | — | Needed once, to download the Privacy Filter model's weights on first real `soapcap deidentify` run (~129MB) |
-| Disk space | — | ~1.1GB for Swift package checkouts + build products, on top of Xcode itself and the model weights above |
-
-Once everything above is in place:
+## Install
 
 ```sh
-swift build -c release
+tools/deidentify/install.sh
 ```
 
-The binary lands at `.build/release/soapcap-deidentify-helper`, which is
-exactly where `SOAPCAP_DEIDENTIFY_BIN` (in `lib/common.sh`) expects it.
+The main `install.sh` offers this too. It needs an Apple silicon Mac and
+Homebrew, and nothing else: no Python, no Xcode.
+
+| Step | What it does | Size |
+|---|---|---|
+| uv | Installs [uv](https://docs.astral.sh/uv/) with Homebrew if it's missing. uv downloads its own Python 3.12, so the Mac's Python (or lack of one) doesn't matter. | ~40MB |
+| Packages | Creates a private environment and installs the exact package versions in `requirements.txt`, each checked against its recorded hash. | ~440MB |
+| Model | Downloads the model's weights from Hugging Face and checks them against a recorded checksum. | ~130MB |
+| Check | Redacts a test sentence with the network switched off. | — |
+
+Everything lands in `~/.local/share/soapcap/deidentify`
+(`SOAPCAP_DEIDENTIFY_DIR`); delete that folder to remove it. Re-running the
+script is safe and repairs a partial install. Moving the soapcap folder
+afterwards means re-running it, because the launcher it writes points at
+`deidentify.py` here.
+
+**No network at run time.** The install is the only step that downloads
+anything. `deidentify.py` runs with the Hugging Face hub switched off, so a
+transcript is never in a process that can reach the network for model files.
+
+To change a package version, edit `requirements.in` and regenerate the lock:
+
+```sh
+uv pip compile --generate-hashes --python-version 3.12 requirements.in -o requirements.txt
+```
 
 ## Contract
 
@@ -44,29 +49,27 @@ exactly where `SOAPCAP_DEIDENTIFY_BIN` (in `lib/common.sh`) expects it.
   Line count is unchanged from the input.
 - **stderr on exit 0**: exactly one line — either
   `redacted N span(s): LABEL x count, ...` or `no entities detected`.
-- **Exit codes**: `0` success; `2` model weights unavailable (no network
-  on a true first run); `1` any other failure. Nothing should be trusted
+- **Exit codes**: `0` success; `2` model weights unavailable (the
+  install didn't finish); `1` any other failure. Nothing should be trusted
   on stdout unless the exit code is `0`.
 - **`--version`**: prints a version string and exits 0 without touching
   stdin, the model, or the network.
 
 ## Detection runs twice and merges
 
-`extractPIIChunked` runs under two different chunk-window layouts
-(256/32 tokens, then 480/128 — the latter near the model's real
-512-token hard limit, see `App.swift`'s `max_position_embeddings` note)
-and the results are merged through `removeOverlaps()`. This exists
-because retuning the window is a lateral tradeoff, not a strict
-improvement: a wider window fixed one missed phone number in testing but
-broke a different one that the default window had caught. Running both
-and merging covers both, for roughly 2x inference time (still under a
-second for a typical transcript on this model's size). Full story in
-`DEV_NOTES.local.md` if you're touching this again.
+The text is cut into overlapping windows of tokens and the model runs on
+each. That happens under two window layouts (256 tokens with 32 of overlap,
+then 480 with 128, the latter just under the model's 512-token limit) and
+the results are merged through `remove_overlaps()`. Retuning the window is a
+lateral tradeoff, not a strict improvement: a wider window fixed one missed
+phone number in testing but broke a different one that the narrower window
+had caught. Running both and merging covers both. A 60-minute transcript
+still takes about 3 seconds.
 
 ## Rule-based detections
 
 Two regex rules run alongside the model, and their matches merge through
-the same `removeOverlaps()` as the model's spans:
+the same `remove_overlaps()` as the model's spans:
 
 | Rule | Pattern | Label |
 |---|---|---|
@@ -104,6 +107,25 @@ Known gaps these rules deliberately don't cover:
 On the sample-transcript corpus, adding the rules took must-redact
 identifiers from 36/40 to 38/40 fully removed, with no new false
 positives. The two remaining misses are the "ending in" references above.
+
+That was measured with the earlier Swift helper. This one was compared with
+it on all eight sample transcripts: it removes everything the Swift helper
+removed, plus an employer and an insurer the Swift helper left in. Both
+leave the two "ending in" references and one insurer's name in the
+60-minute sample. It also tags more durations ("ten minutes", "forty
+minutes") as `TIME` than the Swift helper did, which is over-redaction, not
+a leak, but it does cost a note some detail.
+
+Two more rules clean up the model's own output:
+
+- **A name tagged once is redacted everywhere.** Any text the model tags as
+  a first or last name is then replaced wherever it appears as a whole word.
+  The model misses an occasional repeat (it caught nine of ten "Sam"s in the
+  60-minute sample and left "the Sam dinner"), and one missed mention undoes
+  the rest. A name that is also an ordinary word ("Will", "Hope") gets
+  over-redacted, in the safe direction.
+- **One-character spans are dropped.** The model sometimes tags a stray
+  token, which turned "haven't" into "haven'[FIRST_NAME_4]".
 
 ## Known limitation, found during testing
 
@@ -159,7 +181,7 @@ lives here: **only de-identified output is written to disk or
 sent anywhere.** soapcap itself follows it already. `session` offers to save
 a transcript only after redaction succeeds, with one exception for
 troubleshooting: when a SOAP draft comes out with no Subjective section, it
-offers to save the transcript, de-identified if this helper is built and
+offers to save the transcript, de-identified if this helper is set up and
 you accept, so the cause can be found.
 
 - [ ] `--backend cloud` — POST the de-identified transcript to a
