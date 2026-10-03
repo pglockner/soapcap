@@ -61,6 +61,25 @@ sc_offer_save_transcript() {
   sc_info "(shown in Finder: the soapcap folder in your home folder)"
 }
 
+# sc_session_title — the heading `session` opens with: an ASCII-art title on
+# its full-screen display when the terminal is wide enough, a plain line
+# otherwise (piped, scripted, or a narrow window).
+sc_session_title() {
+  if [ "${SC_ALT_SCREEN:-0}" = "1" ] && [ "$(tput cols 2>/dev/null || echo 0)" -ge 50 ]; then
+    cat >&2 <<'TITLE'
+  _______________  ______   ____ _____  ______
+ /  ___/  _ \__  \ \____ \_/ ___\\__  \ \____ \
+ \___ (  <_> ) __ \|  |_> >  \___ / __ \|  |_> >
+/____  >____(____  /   __/ \___  >____  /   __/
+     \/          \/|__|        \/     \/|__|
+
+TITLE
+    sc_info "guided capture"
+  else
+    sc_info "soapcap session — guided capture"
+  fi
+}
+
 # ---------------------------------------------------------------------------
 # soapcap session [--format soap|dap|birp] [--model NAME] [--no-note]
 #                 [--style narrative|structured|combined]
@@ -110,7 +129,7 @@ sc_cmd_session() {
   # shellcheck disable=SC2034  # read by sc_spin_post (lib/generate.sh)
   SC_KEEP_PASS_STATS=1
 
-  sc_info "soapcap session — guided capture"
+  sc_session_title
   sc_info "  • Use headphones so your mic does not pick up the other party."
   sc_info "  • Turn on Do Not Disturb; system audio capture records the whole mix."
   if [ -t 0 ]; then
