@@ -154,6 +154,55 @@ Continue weekly sessions.
 
 Homework: practice the breathing exercise daily." "$result"
 
+# --- sc_note_faults and the re-drafting loop ------------------------------
+
+result=$(printf 'SUBJECTIVE:\nSlept badly.\n\nOBJECTIVE:\nCalm.\n\nASSESSMENT:\nNot addressed in this session.\n\nPLAN:\nWeekly.\n' \
+  | sc_note_faults "SUBJECTIVE ASSESSMENT PLAN")
+assert_eq "note_faults: flags a \"Not addressed\" section" 'ASSESSMENT is empty or "Not addressed"' "$result"
+
+result=$(printf 'SUBJECTIVE:\nNot addressed in this session.\n\nOBJECTIVE:\nCalm, cooperative.\n' \
+  | sc_note_faults "SUBJECTIVE ASSESSMENT")
+assert_eq "note_faults: the next section's text doesn't fill an empty one; a cut-off note is flagged" \
+  'SUBJECTIVE is empty or "Not addressed"
+no ASSESSMENT section' "$result"
+
+# A model stand-in that answers from DRAFTS, one draft a request.
+# shellcheck disable=SC2034  # good/bad/worse are read by name (${!d})
+redraft() {
+  (
+    good='SUBJECTIVE:\nSlept badly.\n\nASSESSMENT:\nStress.\n\nPLAN:\nWeekly.'
+    bad='SUBJECTIVE:\nSlept badly.\n\nASSESSMENT:\nNot addressed in this session.\n\nPLAN:\nWeekly.'
+    worse='SUBJECTIVE:\nSlept badly.'
+    calls=0 SC_ROOT="$here"
+    sc_model_start() { :; }
+    sc_model_stop() { :; }
+    sc_structured_request() { SC_STRUCT_JSON='{}'; }
+    sc_add_objective() { :; }
+    sc_model_request() {
+      calls=$((calls + 1))
+      # shellcheck disable=SC2086
+      set -- $DRAFTS
+      eval "d=\${$calls:-good}"
+      # shellcheck disable=SC2154
+      SC_RAW_NOTE=$(printf '%b' "${!d}"); SC_RAW_DONE=stop
+    }
+    long=$(printf "${SPEAKER:-Client}: word %.0s" $(seq 1 100))
+    sc_generate_note soap llama3.1:8b http://x "$long" narrative 2>/dev/null
+    printf '%s drafts\n%s\n' "$calls" "$SC_NOTE" | grep -v '^$' | paste -sd '|' -
+  )
+}
+result=$(DRAFTS="bad good" redraft)
+assert_eq "generate_note: drafts again after an incomplete draft, and stops at a complete one" \
+  "2 drafts|SUBJECTIVE:|Slept badly.|ASSESSMENT:|Stress.|PLAN:|Weekly." "$result"
+
+result=$(DRAFTS="bad worse bad" redraft)
+assert_eq "generate_note: gives up after SOAPCAP_NOTE_ATTEMPTS, keeping the most complete draft" \
+  "3 drafts|SUBJECTIVE:|Slept badly.|ASSESSMENT:|Not addressed in this session.|PLAN:|Weekly." "$result"
+
+result=$(SPEAKER=Therapist DRAFTS="bad good" redraft)
+assert_eq "generate_note: a transcript with no client speech gets one draft" \
+  "1 drafts|SUBJECTIVE:|Slept badly.|ASSESSMENT:|Not addressed in this session.|PLAN:|Weekly." "$result"
+
 # --- sc_deidentify_transcript --------------------------------------------
 #
 # These test the bash plumbing around the de-identify helper (label

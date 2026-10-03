@@ -14,6 +14,9 @@ SOAPCAP_MODEL="${SOAPCAP_MODEL:-llama3.1:8b}"
 SOAPCAP_FORMAT="${SOAPCAP_FORMAT:-soap}"
 SOAPCAP_STYLE="${SOAPCAP_STYLE:-narrative}"
 SOAPCAP_OLLAMA_HOST="${SOAPCAP_OLLAMA_HOST:-http://localhost:11434}"
+# How many times `note` drafts before settling for a note with a section
+# missing or empty (sc_generate_note). 1 turns the re-drafting off.
+SOAPCAP_NOTE_ATTEMPTS="${SOAPCAP_NOTE_ATTEMPTS:-3}"
 # The note's first line, e.g. "63 minutes, telehealth" (sc_session_line).
 SOAPCAP_SESSION_TYPE="${SOAPCAP_SESSION_TYPE:-telehealth}"
 # Where `session` saves a de-identified transcript, when asked to. Not
@@ -35,6 +38,7 @@ _sc_cfg="${SOAPCAP_CONFIG:-$HOME/.config/soapcap/config.sh}"
 SOAPCAP_MODEL="${SOAPCAP_MODEL:-llama3.1:8b}"
 SOAPCAP_FORMAT="${SOAPCAP_FORMAT:-soap}"
 SOAPCAP_STYLE="${SOAPCAP_STYLE:-narrative}"
+SOAPCAP_NOTE_ATTEMPTS="${SOAPCAP_NOTE_ATTEMPTS:-3}"
 
 # `--model bonsai` (Bonsai 2 27B via PrismML's llama.cpp fork, set up by
 # tools/bonsai/install.sh). Resolved after config.sh so a SOAPCAP_BONSAI_DIR

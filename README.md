@@ -294,6 +294,12 @@ surface anything suggesting risk (self-harm, harm to others, abuse, crisis),
 and write "Not addressed in this session" rather than pad a section out.
 Formats: `soap` (default), `dap`, `birp`.
 
+A small model sometimes drops a section, or writes "Not addressed in this
+session" under one the transcript plainly covers. `note` checks each draft
+for that and drafts again, up to three times in all
+(`SOAPCAP_NOTE_ATTEMPTS`), keeping the most complete one and saying so if
+it's still incomplete. A transcript with no client lines gets one draft.
+
 **Read every note before it goes near a chart.** It's still an LLM. Mistakes
 concentrate in the Objective section. In a SOAP note it's a mental-status
 judgment made from text alone; in DAP/BIRP, telling an actual in-the-room

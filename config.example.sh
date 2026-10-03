@@ -26,6 +26,9 @@ SOAPCAP_LOCALE=""
 # with soapcap's prompts — see README "Draft a note".
 # SOAPCAP_MODEL="llama3.1:8b"       # or "bonsai"
 # SOAPCAP_FORMAT="soap"             # soap | dap | birp
+# SOAPCAP_NOTE_ATTEMPTS=3           # drafts before settling for a note with
+#                                   # a section missing or empty; 1 = never
+#                                   # draft again
 # SOAPCAP_STYLE="narrative"         # narrative | structured | combined —
 #                                   # see README "Note style"; combined takes
 #                                   # roughly twice as long, and the window

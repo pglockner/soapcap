@@ -31,7 +31,10 @@ FLOW_ENV=(PATH="$FLOW_BIN:/usr/bin:/bin" HOME="$FLOW_DIR/home" TMPDIR="$FLOW_DIR
   STUB_YAP_LOG="$FLOW_DIR/yap.log" STUB_CURL_LOG="$FLOW_DIR/curl.log"
   STUB_CURL_PAYLOAD="$FLOW_DIR/payload.json" STUB_LLAMA_LOG="$FLOW_DIR/llama.log"
   STUB_CURL_ARGS="$FLOW_DIR/curl.args" STUB_CURL_PAYLOG="$FLOW_DIR/payloads.jsonl"
-  STUB_STRUCT_COUNT="$FLOW_DIR/struct.count" STUB_CLIPBOARD="$FLOW_DIR/clipboard")
+  STUB_STRUCT_COUNT="$FLOW_DIR/struct.count" STUB_CLIPBOARD="$FLOW_DIR/clipboard"
+  # The fake model answers every format with the same SOAP-shaped note, so
+  # re-drafting incomplete notes (tested in test/run.sh) is off here.
+  SOAPCAP_NOTE_ATTEMPTS=1)
 
 flow_reset() {
   : > "$FLOW_DIR/yap.log"; : > "$FLOW_DIR/curl.log"; : > "$FLOW_DIR/llama.log"; : > "$FLOW_DIR/curl.args"

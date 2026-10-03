@@ -40,22 +40,8 @@ case "$format" in
 esac
 [ -z "$keep" ] || mkdir -p "$keep"
 
-# check_note HEADERS — reads a note on stdin; prints what is wrong with it,
-# nothing if it's sound. Sample 01 is a one-minute check-in with next to no
-# content, so an empty section there isn't a fault (see its README entry).
-check_note() {
-  awk -v want="$1" -v lenient="$2" "$SC_NOTE_AWK"'
-    BEGIN { n = split(want, names, " ") }
-    { for (i = 1; i <= n; i++) if (hdr(names[i])) { cur = names[i]; seen[cur] = 1; sub(/^[^:]*:/, "") } }
-    cur != "" { body[cur] = body[cur] $0 }
-    END {
-      for (i = 1; i <= n; i++) {
-        if (!seen[names[i]]) print "no " names[i] " section"
-        else if (!lenient && hollow(body[names[i]])) print names[i] " is empty or \"Not addressed\""
-      }
-    }'
-}
-
+# Sample 01 is a one-minute check-in with next to no content, so an empty
+# section there isn't a fault (see its README entry).
 bad=0 total=0
 for f in "$here"/samples/transcripts/*.transcript; do
   name=$(basename "$f" .transcript)
@@ -69,7 +55,7 @@ for f in "$here"/samples/transcripts/*.transcript; do
     total=$((total + 1))
     t0=$SECONDS
     if note=$("$here/bin/soapcap" note "$f" ${opts[@]+"${opts[@]}"} 2>/dev/null); then
-      faults=$(printf '%s\n' "$note" | check_note "$headers" "$lenient")
+      faults=$(printf '%s\n' "$note" | sc_note_faults "$headers" "$lenient")
     else
       note=""; faults="soapcap note failed"
     fi

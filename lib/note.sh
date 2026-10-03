@@ -151,6 +151,45 @@ sc_subjective_missing() {
   '
 }
 
+# sc_note_faults SECTIONS [LENIENT] — reads a note on stdin and prints what
+# is wrong with it, one fault a line, nothing if it's sound: a section named
+# in SECTIONS (space-separated) that has no header, or that is empty or just
+# "Not addressed in this session". With LENIENT only a missing header
+# counts, for a transcript too short to fill every section.
+sc_note_faults() {
+  awk -v want="$1" -v lenient="${2:-}" "$SC_NOTE_AWK"'
+    BEGIN {
+      n = split(want, names, " ")
+      m = split("SUBJECTIVE OBJECTIVE ASSESSMENT PLAN DATA BEHAVIOR INTERVENTION RESPONSE", all, " ")
+    }
+    { for (i = 1; i <= m; i++) if (hdr(all[i])) { cur = all[i]; seen[cur] = 1; sub(/^[^:]*:/, "") } }
+    cur != "" { body[cur] = body[cur] $0 }
+    END {
+      for (i = 1; i <= n; i++) {
+        if (!seen[names[i]]) print "no " names[i] " section"
+        else if (!lenient && hollow(body[names[i]])) print names[i] " is empty or \"Not addressed\""
+      }
+    }'
+}
+
+# sc_draft_sections FORMAT — the sections the prose draft must fill. SOAP's
+# Objective isn't one: it comes from its own pass (see sc_objective_prompt).
+sc_draft_sections() {
+  case "$1" in
+    soap) echo "SUBJECTIVE ASSESSMENT PLAN" ;;
+    dap)  echo "DATA ASSESSMENT PLAN" ;;
+    birp) echo "BEHAVIOR INTERVENTION RESPONSE PLAN" ;;
+  esac
+}
+
+# sc_clean_draft FORMAT — reads a model's prose draft on stdin and prints it
+# with the safety nets against known model misbehavior applied — see each
+# function's own comment for the specific failure it guards against.
+sc_clean_draft() {
+  sc_strip_transcript_echo | sc_strip_contaminated_fallback | sc_strip_trailing_disclaimer \
+    | if [ "$1" = soap ]; then sc_default_plan; else cat; fi
+}
+
 # sc_structured_schema FORMAT — prints the JSON schema for FORMAT.
 sc_structured_schema() {
   local fields
@@ -244,9 +283,11 @@ $transcript"
   # With no client speech at all (the other side of the call wasn't
   # captured), there's nobody to assess: the model would rate the
   # therapist instead. Skip the pass and leave Objective to the clinician.
-  local oprompt="" ojson="null" sjson=""
+  local oprompt="" ojson="null" sjson="" client=1
+  printf '%s\n' "$transcript" | awk -v l="$SOAPCAP_SYSTEM_LABEL: " 'index($0, l) == 1 { f = 1 } END { exit !f }' \
+    || client=""
   if [ "$format" = soap ]; then
-    if printf '%s\n' "$transcript" | awk -v l="$SOAPCAP_SYSTEM_LABEL: " 'index($0, l) == 1 { f = 1 } END { exit !f }'; then
+    if [ -n "$client" ]; then
       oprompt=$(sc_objective_prompt "$transcript")
     else
       ojson='{"no_client": true}'
@@ -265,12 +306,41 @@ $transcript"
   sc_model_start "$model" "$host" "$ctx" || return 1
 
   if [ -n "$full_prompt" ]; then
-    sc_model_request "$model" "$host" "$full_prompt" "Drafting a $format note with ${label}…" 2000 \
-      || { sc_note_release; return 1; }
-    if [ "$SC_RAW_DONE" = length ]; then
+    # A small model sometimes leaves a section out, or writes "Not
+    # addressed in this session" under one the transcript plainly covers
+    # (llama3.1:8b did in about one draft in six of the samples). Another
+    # draft usually comes out whole, so draft again, up to
+    # SOAPCAP_NOTE_ATTEMPTS times, and keep the draft with the fewest
+    # faults. A transcript of a few lines can't fill every section, so
+    # there only a missing section counts; and one with no client speech
+    # (a test run, or the other side of the call not captured) has nothing
+    # to fill them with, so it gets the one draft.
+    local try=1 max="$SOAPCAP_NOTE_ATTEMPTS" title draft faults n best_n=-1 best_faults="" best_done="" lenient=""
+    [ "$(printf '%s' "$transcript" | wc -w)" -ge 150 ] || lenient=1
+    [ -n "$client" ] || max=1
+    title="Drafting a $format note with ${label}…"
+    while :; do
+      if ! sc_model_request "$model" "$host" "$full_prompt" "$title" 2000; then
+        [ "$best_n" -ge 0 ] && break
+        sc_note_release; return 1
+      fi
+      draft=$(printf '%s\n' "$SC_RAW_NOTE" | sc_clean_draft "$format")
+      faults=$(printf '%s\n' "$draft" | sc_note_faults "$(sc_draft_sections "$format")" "$lenient")
+      n=$(printf '%s' "$faults" | grep -c .)
+      if [ "$best_n" -lt 0 ] || [ "$n" -lt "$best_n" ]; then
+        note="$draft"; best_n=$n; best_faults="$faults"; best_done="$SC_RAW_DONE"
+      fi
+      { [ "$n" -eq 0 ] || [ "$try" -ge "$max" ]; } && break
+      try=$((try + 1))
+      sc_info "That draft is incomplete ($(printf '%s' "$faults" | paste -sd ';' - | sed 's/;/; /g')) — drafting again, $try of $max."
+      title="Drafting the $format note again with ${label}…"
+    done
+    if [ "$best_n" -gt 0 ] && [ -n "$client" ]; then
+      sc_err "warning: the note is still incomplete after $try drafts ($(printf '%s' "$best_faults" | paste -sd ';' - | sed 's/;/; /g')) — check it against the transcript"
+    fi
+    if [ "$best_done" = length ]; then
       sc_err "warning: $label hit its output limit — the end of the note may be cut off"
     fi
-    note="$SC_RAW_NOTE"
   fi
   if [ -n "$sprompt" ]; then
     if [ "$style" = structured ]; then
@@ -314,16 +384,11 @@ $transcript"
     return
   fi
 
-  # Three safety nets against known model misbehavior in prose — see each
-  # function's own comment for the specific failure it guards against.
-  note="$SC_RAW_NOTE"
-  note=$(printf '%s\n' "$note" | sc_strip_transcript_echo)
-  note=$(printf '%s\n' "$note" | sc_strip_contaminated_fallback)
-  SC_NOTE=$(printf '%s\n' "$note" | sc_strip_trailing_disclaimer)
+  # The prose draft, already cleaned (sc_clean_draft) by the drafting loop.
+  SC_NOTE="$SC_RAW_NOTE"
   [ -n "$SC_NOTE" ] || return 1
   if [ "$format" = soap ]; then
     sc_add_objective "$ojson" || return 1
-    SC_NOTE=$(printf '%s\n' "$SC_NOTE" | sc_default_plan)
   fi
 
   if [ "$style" = combined ]; then
