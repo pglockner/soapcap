@@ -152,7 +152,7 @@ sc_session_draft() {
     sc_info ""
     if sc_generate_note "$format" "$model" "$host" "$transcript" "$style"; then
       if [ "$deid" -eq 1 ]; then
-        if sc_deidentify_transcript "$SC_NOTE"; then
+        if sc_deidentify_transcript "$SC_NOTE" note; then
           SC_NOTE="$SC_DEIDENTIFY_TRANSCRIPT"
           sc_info "note: $SC_DEIDENTIFY_SUMMARY"
         else

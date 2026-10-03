@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # soapcap deidentify — local PII redaction via the de-identify helper.
 
-# sc_deidentify_transcript TRANSCRIPT
+# sc_deidentify_transcript TEXT [note]
 #
 # Runs TRANSCRIPT through the de-identify helper (tools/deidentify: OpenMed's
 # on-device PII model) and replaces detected PII with consistent,
@@ -16,11 +16,14 @@
 # e.g. "redacted 4 span(s): FIRST_NAME x3, PHONE x1", straight from the
 # helper's own stderr) and returns 0. On failure both are cleared, an
 # actionable message goes to sc_err, and it returns 1 without exiting --
-# same contract as sc_generate_note.
+# same contract as sc_generate_note. With "note" as the second argument TEXT
+# is a drafted note, which has no speaker labels: every line goes to the
+# helper whole (otherwise whatever came before a line's first ": " would be
+# taken for a label and skipped).
 sc_deidentify_transcript() {
   SC_DEIDENTIFY_TRANSCRIPT=""
   SC_DEIDENTIFY_SUMMARY=""
-  local transcript="$1" bin="$SOAPCAP_DEIDENTIFY_BIN"
+  local transcript="$1" kind="${2:-transcript}" bin="$SOAPCAP_DEIDENTIFY_BIN"
 
   if [ ! -x "$bin" ]; then
     sc_err "de-identify helper not found or not executable: $bin"
@@ -36,10 +39,12 @@ sc_deidentify_transcript() {
   local -a labels=()
   local body_blob="" line label body first=1
   while IFS= read -r line; do
-    case "$line" in
-      *': '*) label="${line%%: *}"; body="${line#*: }" ;;
-      *)      label="";             body="$line" ;;
-    esac
+    label=""; body="$line"
+    if [ "$kind" != note ]; then
+      case "$line" in
+        *': '*) label="${line%%: *}"; body="${line#*: }" ;;
+      esac
+    fi
     labels+=("$label")
     if [ "$first" -eq 1 ]; then body_blob="$body"; first=0
     else body_blob="$body_blob"$'\n'"$body"; fi
