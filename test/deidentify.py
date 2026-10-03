@@ -63,6 +63,20 @@ class Redact(unittest.TestCase):
         self.assertEqual(d.redact(text, [(0, 3, "first_name", 0.9)], upper)[0].count("\n"), 2)
 
 
+class KeepLabels(unittest.TestCase):
+    def test_time_spans_are_left_in_the_text(self):
+        text = "we met 3:00 to 3:50, call Ana"
+        model = spans(text, ("3:00", "time"), ("3:50", "TIME"), ("Ana", "first_name"))
+        kept = d.drop_kept(model, upper)
+        self.assertEqual([label for _, _, label, _ in kept], ["first_name"])
+        self.assertEqual(d.redact(text, kept, upper)[0], "we met 3:00 to 3:50, call [FIRST_NAME_1]")
+
+    def test_dates_are_still_redacted(self):
+        text = "on 03/05 at noon"
+        kept = d.drop_kept(spans(text, ("03/05", "date")), upper)
+        self.assertEqual(d.redact(text, kept, upper)[0], "on [DATE_1] at noon")
+
+
 class RepeatNames(unittest.TestCase):
     def test_missed_repeat_is_caught_as_a_whole_word(self):
         text = "Sam called. The Sam dinner, not the Samuel one."

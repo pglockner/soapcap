@@ -4,7 +4,7 @@ Reads a transcript body (speaker labels already stripped by the caller) on
 stdin, runs it through OpenMed's on-device PII model plus two regex rules
 (month names, 7+-digit numbers), and writes the same text back with detected
 spans replaced by consistent, category-numbered tokens ([FIRST_NAME_1],
-[PHONE_1], ...). A one-line summary goes to stderr. README.md has the full
+[PHONE_1], ...), except categories in KEEP_LABELS. A one-line summary goes to stderr. README.md has the full
 stdin/stdout/exit-code contract.
 
 Never touches the network: the model is downloaded by install.sh, and this
@@ -16,10 +16,14 @@ import os
 import re
 import sys
 
-VERSION = "soapcap-deidentify-helper 0.3.0 (OpenMed PII model via MLX + month/long-number rules)"
+VERSION = "soapcap-deidentify-helper 0.3.1 (OpenMed PII model via MLX + month/long-number rules)"
 MODEL = "OpenMed/OpenMed-PII-ClinicalE5-Small-33M-v1-mlx"
 TOKENIZER = "OpenMed/OpenMed-PII-ClinicalE5-Small-33M-v1"
 CONFIDENCE = 0.5
+# Categories the model finds but we never redact. TIME: the session's own
+# time is the therapist's to submit with the note for time tracking, and the
+# model can't tell it from any other clock time. Dates are still redacted.
+KEEP_LABELS = {"TIME"}
 # Detection runs under two chunk-window layouts (token limit, overlap) and
 # the results are merged. Neither is strictly better: each catches a phone
 # number the other misses, because they put different text near a chunk
@@ -72,6 +76,11 @@ def repeat_names(text, spans, canonical):
         for m in re.finditer(rf"(?<!\w){re.escape(name)}(?!\w)", text):
             out.append((m.start(), m.end(), label, 1.0))
     return out
+
+
+def drop_kept(spans, canonical):
+    """Spans whose category is in KEEP_LABELS are left in the text."""
+    return [s for s in spans if canonical(s[2]) not in KEEP_LABELS]
 
 
 def remove_overlaps(spans):
@@ -156,7 +165,7 @@ def main():
     os.dup2(devnull, 2)
     try:
         from openmed.core.labels import normalize_label
-        spans = model_spans(text) + rule_spans(text) if text.strip() else []
+        spans = drop_kept(model_spans(text), normalize_label) + rule_spans(text) if text.strip() else []
         spans += repeat_names(text, spans, normalize_label)
         redacted, summary = redact(text, spans, normalize_label)
         status = 0

@@ -113,8 +113,10 @@ it on all eight sample transcripts: it removes everything the Swift helper
 removed, plus an employer and an insurer the Swift helper left in. Both
 leave the two "ending in" references and one insurer's name in the
 60-minute sample. It also tags more durations ("ten minutes", "forty
-minutes") as `TIME` than the Swift helper did, which is over-redaction, not
-a leak, but it does cost a note some detail.
+minutes") as `TIME` than the Swift helper did. `TIME` spans are never
+redacted (see `KEEP_LABELS` in `deidentify.py`): the session time is the
+therapist's to submit with the note for time tracking, and the model can't
+tell it from any other clock time.
 
 Two more rules clean up the model's own output:
 
