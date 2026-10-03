@@ -4,6 +4,7 @@
 
 - Replaced the Swift de-identify helper with a Python one that doesn't need Xcode or an existing Python; set it up with `tools/deidentify/install.sh`.
 - Changed de-identify so it no longer redacts clock times.
+- Added an ASCII-art title at the start of `session`.
 
 ## 0.9 (2026-10-03)
 
