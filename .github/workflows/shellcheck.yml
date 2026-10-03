@@ -14,6 +14,7 @@ on:
 jobs:
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -46,8 +47,11 @@ jobs:
   macos:
     if: github.server_url == 'https://github.com'
     runs-on: macos-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
-      - name: fixture tests (bash 3.2, BSD tools)
-        run: test/run.sh
+      - name: fixture tests (macOS's own bash and BSD tools)
+        run: |
+          bash --version | head -n 1
+          test/run.sh

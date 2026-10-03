@@ -118,46 +118,54 @@ flow_tty() {
     printf 'echo $? > %q\n' "$FLOW_DIR/tty.rc"
   } > "$FLOW_DIR/tty.sh"
   chmod +x "$FLOW_DIR/tty.sh"
-  : > "$FLOW_DIR/keys"
-
   # BSD script takes the command as arguments, util-linux's as -c STRING.
   # perl resets SIGINT as in flow_run, so a typed Ctrl-C reaches soapcap.
-  # Keys reach script down a pipe from `tail -f` on a plain file: macOS's
-  # script refuses a FIFO as its stdin.
+  # Keys reach script down a pipe held open on fd 3 (macOS's script refuses
+  # a FIFO as its stdin).
   local cmd=(script -q /dev/null "$FLOW_DIR/tty.sh")
   if script --version 2>&1 | grep -q util-linux; then
     cmd=(script -qec "$FLOW_DIR/tty.sh" /dev/null)
   fi
+  : > "$FLOW_DIR/out"
   # shellcheck disable=SC2016  # $SIG is a perl variable, not a shell one
-  tail -f "$FLOW_DIR/keys" 2>/dev/null \
-    | /usr/bin/perl -e '$SIG{INT} = "DEFAULT"; exec @ARGV' "${cmd[@]}" >"$FLOW_DIR/out" 2>&1 &
-  local pid=$!
-  ( sleep 30; kill -KILL "$pid" 2>/dev/null ) >/dev/null 2>&1 &
-  local watchdog=$!
+  exec 3> >(/usr/bin/perl -e '$SIG{INT} = "DEFAULT"; exec @ARGV' "${cmd[@]}" >"$FLOW_DIR/out" 2>&1)
 
+  # Every wait here is bounded: a step gets 10 seconds to show up, the run
+  # 20 more to finish, and whatever is left after that is killed.
   local text keys seen=0 i
   while IFS=$'\t' read -r text keys; do
     i=0
     until tail -c "+$((seen + 1))" "$FLOW_DIR/out" | LC_ALL=C grep -qF -- "$text"; do
       i=$((i + 1))
-      if [ "$i" -gt 100 ] || ! kill -0 "$pid" 2>/dev/null; then
+      if [ "$i" -gt 100 ] || [ -e "$FLOW_DIR/tty.rc" ]; then
         FLOW_STUCK="$text"; break 2
       fi
       sleep 0.1
     done
     seen=$(wc -c < "$FLOW_DIR/out" | tr -d ' ')
-    printf '%b' "$keys" >> "$FLOW_DIR/keys"
+    printf '%b' "$keys" >&3
   done
-  [ -n "$FLOW_STUCK" ] && kill -KILL "$pid" 2>/dev/null
-  # `wait` would wait for the whole pipeline, and tail never ends by itself:
-  # once script has gone, one more byte makes tail write to a closed pipe.
-  while kill -0 "$pid" 2>/dev/null; do sleep 0.1; done
-  echo >> "$FLOW_DIR/keys"
-  wait "$pid" 2>/dev/null
+  # soapcap has finished once the wrapper has written its exit status.
+  i=0
+  while [ -z "$FLOW_STUCK" ] && [ ! -e "$FLOW_DIR/tty.rc" ]; do
+    i=$((i + 1))
+    [ "$i" -gt 200 ] && FLOW_STUCK="(soapcap never finished)"
+    sleep 0.1
+  done
+  exec 3>&-
+  # script ends when its command does; give it a moment to write the last
+  # of the output, then kill anything a stuck run left behind.
+  i=0
+  while [ -z "$FLOW_STUCK" ] && [ "$i" -lt 20 ] && pgrep -f "$FLOW_DIR/tty.sh" >/dev/null; do
+    sleep 0.1; i=$((i + 1))
+  done
+  pkill -KILL -f "$FLOW_DIR/tty.sh" 2>/dev/null
   FLOW_RC=$(cat "$FLOW_DIR/tty.rc" 2>/dev/null || echo killed)
-  kill "$watchdog" 2>/dev/null; wait "$watchdog" 2>/dev/null
   flow_finish
   FLOW_OUT=$(LC_ALL=C tr -d '\r' < "$FLOW_DIR/out")
+  # What the terminal showed last is the place to look when a step got stuck.
+  [ -n "$FLOW_STUCK" ] && FLOW_ERR=$(printf '%s\n' "$FLOW_OUT" | tail -n 5)
+  return 0
 }
 
 expected_transcript="Therapist: How have you been sleeping
