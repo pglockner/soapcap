@@ -1,10 +1,12 @@
-name: Shell lint
+name: Lint and tests
 
 # soapcap only runs on macOS 26 (Apple silicon) and depends on yap, Ollama,
 # and real audio hardware — none of which this runner has, so the actual
 # CLI is never invoked here. This workflow is syntax/lint plus fixture
 # tests of the pure text-transformation logic plus stub-based flow tests
-# (fake yap and curl, test/stubs/) that don't need any of that.
+# (fake yap, curl and pbcopy, test/stubs/) that don't need any of that.
+# The tests run twice: on Ubuntu (bash 5, GNU tools), and on macOS, whose
+# bash 3.2 and BSD tools are what soapcap actually runs under.
 on:
   push:
   pull_request:
@@ -17,7 +19,7 @@ jobs:
 
       - name: bash -n syntax check
         run: |
-          for f in bin/soapcap install.sh soapcap.command update.command test/run.sh test/flow.sh test/stubs/curl lib/*.sh tools/bonsai/install.sh tools/deidentify/install.sh; do
+          for f in bin/soapcap install.sh soapcap.command update.command test/run.sh test/flow.sh test/linux.sh test/samples.sh test/stubs/curl test/stubs/llama-server test/stubs/pbcopy lib/*.sh tools/bonsai/install.sh tools/deidentify/install.sh; do
             bash -n "$f"
           done
 
@@ -29,7 +31,7 @@ jobs:
           SUDO=""
           command -v sudo >/dev/null 2>&1 && SUDO=sudo
           $SUDO apt-get update -qq && $SUDO apt-get install -y -qq shellcheck
-          shellcheck bin/soapcap install.sh soapcap.command update.command test/run.sh test/flow.sh test/stubs/curl test/stubs/llama-server lib/*.sh config.example.sh tools/bonsai/install.sh tools/deidentify/install.sh
+          shellcheck bin/soapcap install.sh soapcap.command update.command test/run.sh test/flow.sh test/samples.sh test/stubs/curl test/stubs/llama-server test/stubs/pbcopy lib/*.sh config.example.sh tools/bonsai/install.sh tools/deidentify/install.sh
 
       - name: fixture tests
         run: |
@@ -37,3 +39,15 @@ jobs:
           # the Forgejo runner's job image (data.forgejo.org/oci/node:lts).
           command -v jq >/dev/null 2>&1 || { SUDO=""; command -v sudo >/dev/null 2>&1 && SUDO=sudo; $SUDO apt-get update -qq && $SUDO apt-get install -y -qq jq; }
           test/run.sh
+
+  # GitHub only: it has hosted macOS runners, and a Forgejo instance has none
+  # unless one of its own Macs is registered as a runner (there is no macOS
+  # container image to run this in).
+  macos:
+    if: github.server_url == 'https://github.com'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: fixture tests (bash 3.2, BSD tools)
+        run: test/run.sh

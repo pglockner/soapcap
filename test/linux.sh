@@ -18,7 +18,7 @@ if [ "${1:-}" = --rebuild ] || ! docker image inspect "$image" >/dev/null 2>&1; 
   echo "== building $image (ubuntu 24.04, as on GitHub's ubuntu-latest)"
   docker build -q -t "$image" - <<'EOF'
 FROM ubuntu:24.04
-RUN apt-get update -qq && apt-get install -y -qq shellcheck jq perl procps bsdutils util-linux curl >/dev/null
+RUN apt-get update -qq && apt-get install -y -qq shellcheck jq perl procps bsdutils util-linux curl less python3 >/dev/null
 EOF
 fi
 
