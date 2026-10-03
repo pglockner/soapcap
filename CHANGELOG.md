@@ -4,6 +4,7 @@
 
 - Changed `note` to check each prose draft for a missing section, or one that is empty or just "Not addressed in this session", and to draft again up to `SOAPCAP_NOTE_ATTEMPTS` times (default 3), keeping the draft with the fewest faults and warning when it is still incomplete.
 - Changed that check to count only a missing section for a transcript under 150 words, and to give a transcript with no client lines a single draft.
+- Changed Ollama's prose drafts to use the same sampling settings as Bonsai's (temperature 0.7, top-p 0.8, top-k 20) in place of the model's defaults.
 
 ## 0.11 (2026-10-03)
 
