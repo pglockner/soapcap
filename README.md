@@ -337,9 +337,7 @@ With `llama3.1:8b`, structured DAP/BIRP notes can copy transcript lines
 word for word; use `narrative` with that model.
 
 Reviews print to the terminal only (stderr) — never into the note, `--out`,
-or the clipboard. The window app doesn't show them yet, so `combined`
-there costs the extra time with nothing to show for it; use `narrative`
-or `structured` with the app for now.
+or the clipboard.
 
 The next-steps checklist lists every next step the check found, with its
 transcript line. It doesn't say which ones the note is missing; check
@@ -445,21 +443,6 @@ Every `live`/`note` flag still applies. The model is whatever
 each name with a numbered token, and the drafting model tends to write "the
 client" or "the couple" rather than track who is who, so the note may lose
 who said or did what. Decline de-identification if that attribution matters.
-
-### Window app (experimental)
-
-```sh
-SOAPCAP_SIGN_IDENTITY="Apple Development: you@example.com (TEAMID)" tools/session-app/build.sh
-open tools/session-app/build/Soapcap.app
-```
-
-A SwiftUI window with the same flow as `session` (record, optional
-de-identify, draft, keep-and-copy) and scrollable, selectable transcript and
-note text. Because it isn't a terminal program, nothing it shows can land in
-terminal scrollback. It needs full Xcode and a code-signing identity so macOS
-keeps its Microphone and Screen Recording grants across rebuilds; see
-[tools/session-app/README.md](tools/session-app/README.md). Pause and resume
-are supported.
 
 ### Pause/resume
 
@@ -643,9 +626,9 @@ never produces (see [Retention](#retention)).
       BAA-covered SOAP API
 - [ ] `soapcap record` — the one path that *must* keep audio briefly, for
       Upheal (audio-only intake); capture to a temp `.m4a`, upload, delete
-- [x] Experimental native window front end for `session` (`tools/session-app`)
 - [x] Note styles — `narrative`, `structured`, `combined` (`--style`)
-- [ ] Show `structured`/`combined` reviews in the window app
+- [ ] Native Swift app, replacing these scripts — in development, not yet
+      available
 - [ ] Pause and speech-rate markers — yap's per-segment timestamps could
       mark long pauses, or speech noticeably faster/slower than a speaker's
       own baseline, as neutral in-session observations for Objective.

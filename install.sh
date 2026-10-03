@@ -306,6 +306,5 @@ next_msg="$next_msg
 
 Optional extras (each README lists requirements and steps):
   tools/bonsai/install.sh    Bonsai note model (slower, more careful; ~6GB)
-  tools/deidentify-helper/   local PII redaction (needs full Xcode)
-  tools/session-app/         experimental window app (needs Xcode + a signing identity)"
+  tools/deidentify-helper/   local PII redaction (needs full Xcode)"
 printf '%s\n' "$next_msg"

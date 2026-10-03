@@ -3,7 +3,7 @@
 # merging, note safety nets, de-identify plumbing), then flow tests
 # (test/flow.sh) that run the real bin/soapcap against fake yap and curl
 # (test/stubs/). Not covered: real audio, macOS permissions, the Ollama models
-# themselves, doctor, and the window app.
+# themselves, and doctor.
 #
 # Run with: test/run.sh
 # Exits non-zero if anything fails, so it's usable from CI.
