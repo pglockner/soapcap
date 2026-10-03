@@ -218,11 +218,9 @@ elif [ "$current" = "bonsai" ] && [ "$bonsai_ready" -eq 0 ] && [ "$ollama_ready"
   new_default="llama3.1:8b"
 fi
 if [ -n "$new_default" ]; then
-  if grep -q '^SOAPCAP_MODEL=' "$cfg" 2>/dev/null; then
-    sed -i '' "s|^SOAPCAP_MODEL=.*|SOAPCAP_MODEL=\"$new_default\"|" "$cfg"
-  else
-    printf 'SOAPCAP_MODEL="%s"\n' "$new_default" >> "$cfg"
-  fi
+  # shellcheck source=lib/model.sh
+  . "$here/lib/model.sh"
+  sc_save_model_config "$new_default"
   echo "==> Default note model set to $new_default (the one that's installed)"
 fi
 

@@ -11,11 +11,6 @@ bonsai|~6GB (16GB+ Mac)|More careful: best at pronouns and at not inventing in-s
 EOF
 }
 
-# sc_bonsai_installed — true when both halves of the Bonsai setup exist.
-sc_bonsai_installed() {
-  [ -x "$SOAPCAP_BONSAI_SERVER" ] && [ -f "$SOAPCAP_BONSAI_GGUF" ]
-}
-
 # sc_installed_models HOST DEFAULT — prints the tags that are ready to use
 # right now, one per line, DEFAULT first (so bare Enter keeps it): DEFAULT
 # itself, Bonsai if it's set up, then every model pulled into Ollama
@@ -25,7 +20,7 @@ sc_installed_models() {
   {
     printf '%s\n' "$default"
     sc_bonsai_installed && printf 'bonsai\n'
-    curl -s --max-time 3 "$host/api/tags" 2>/dev/null | jq -r '.models[]?.name // empty' 2>/dev/null
+    sc_ollama_models "$host"
   } | awk 'NF && !seen[$0]++'
 }
 
@@ -35,7 +30,7 @@ sc_installed_models() {
 sc_model_table() {
   local host="$1" tag size note status
   local pulled
-  pulled=$(curl -s --max-time 3 "$host/api/tags" 2>/dev/null | jq -r '.models[]?.name // empty' 2>/dev/null)
+  pulled=$(sc_ollama_models "$host")
   {
     while IFS='|' read -r tag size note; do
       [ -z "$tag" ] && continue
@@ -85,12 +80,16 @@ EXTRAS
 
 # sc_save_model_config TAG — persists TAG as SOAPCAP_MODEL in config.sh
 # (creating ~/.config/soapcap/config.sh if it doesn't exist yet), so
-# session/note pick it up as the new default without needing --model.
+# session/note pick it up as the new default without needing --model. An
+# existing SOAPCAP_MODEL line is replaced where it stands; the file is
+# rewritten in place, so a config.sh that is a symlink stays one. Also used
+# by install.sh, which sources this file for it.
 sc_save_model_config() {
-  local tag="$1" cfg="${SOAPCAP_CONFIG:-$HOME/.config/soapcap/config.sh}"
+  local tag="$1" cfg="${SOAPCAP_CONFIG:-$HOME/.config/soapcap/config.sh}" body
   mkdir -p "$(dirname "$cfg")"
   if [ -f "$cfg" ] && grep -q '^SOAPCAP_MODEL=' "$cfg"; then
-    sed -i '' "s|^SOAPCAP_MODEL=.*|SOAPCAP_MODEL=\"$tag\"|" "$cfg"
+    body=$(awk -v line="SOAPCAP_MODEL=\"$tag\"" '/^SOAPCAP_MODEL=/ { print line; next } { print }' "$cfg")
+    printf '%s\n' "$body" > "$cfg"
   else
     printf 'SOAPCAP_MODEL="%s"\n' "$tag" >> "$cfg"
   fi
@@ -143,7 +142,7 @@ CATALOG
     case " ${tags[*]} " in *" $tag "*) continue ;; esac
     tags+=("$tag")
   done <<PULLED
-$(curl -s --max-time 3 "$host/api/tags" 2>/dev/null | jq -r '.models[]?.name // empty' 2>/dev/null)
+$(sc_ollama_models "$host")
 PULLED
 
   local chosen
@@ -162,7 +161,7 @@ PULLED
     fi
   else
     local pulled
-    pulled=$(curl -s --max-time 3 "$host/api/tags" 2>/dev/null | jq -r '.models[]?.name // empty' 2>/dev/null)
+    pulled=$(sc_ollama_models "$host")
     if ! printf '%s\n' "$pulled" | grep -qx "$chosen"; then
       sc_confirm "$chosen isn't pulled yet — pull it now?" || { sc_info "Not pulled — default unchanged ($SOAPCAP_MODEL)."; return 1; }
       if ! command -v ollama >/dev/null 2>&1; then

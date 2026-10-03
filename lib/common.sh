@@ -31,6 +31,10 @@ SOAPCAP_DEIDENTIFY_BIN="${SOAPCAP_DEIDENTIFY_BIN:-$SOAPCAP_DEIDENTIFY_DIR/soapca
 _sc_cfg="${SOAPCAP_CONFIG:-$HOME/.config/soapcap/config.sh}"
 # shellcheck source=/dev/null
 [ -f "$_sc_cfg" ] && . "$_sc_cfg"
+# An entry left blank in config.sh means "the default", not "nothing".
+SOAPCAP_MODEL="${SOAPCAP_MODEL:-llama3.1:8b}"
+SOAPCAP_FORMAT="${SOAPCAP_FORMAT:-soap}"
+SOAPCAP_STYLE="${SOAPCAP_STYLE:-narrative}"
 
 # `--model bonsai` (Bonsai 2 27B via PrismML's llama.cpp fork, set up by
 # tools/bonsai/install.sh). Resolved after config.sh so a SOAPCAP_BONSAI_DIR
@@ -53,7 +57,9 @@ sc_die()  { sc_err "$*"; exit 1; }
 SC_TMP_PATHS=()
 
 sc_cleanup() {
-  sc_bonsai_stop
+  # The note model too: a background llama-server ignores the terminal's
+  # Ctrl-C and would otherwise outlive soapcap holding ~6GB.
+  sc_model_stop
   [ "${#SC_TMP_PATHS[@]}" -gt 0 ] && rm -rf "${SC_TMP_PATHS[@]}"
   SC_TMP_PATHS=()
 }
@@ -74,30 +80,6 @@ sc_tmpdir() {
   chmod 700 "$d" 2>/dev/null
   SC_TMP_PATHS+=("$d")
   printf -v "$1" '%s' "$d"
-}
-
-# sc_bonsai_stop — stops the llama-server sc_bonsai_start launched, if any,
-# and waits for it so its memory is actually released before we go on. Safe
-# to call repeatedly; also runs from the EXIT trap, because a background
-# child of a non-interactive script ignores the terminal's Ctrl-C and would
-# otherwise outlive soapcap holding ~6GB.
-sc_bonsai_stop() {
-  if [ -n "${SC_BONSAI_PID:-}" ]; then
-    kill "$SC_BONSAI_PID" 2>/dev/null
-    # llama-server finishes an in-flight request before honouring SIGTERM
-    # (~30s observed mid-note); give it 3s, then force it.
-    local i=0
-    while [ "$i" -lt 30 ] && kill -0 "$SC_BONSAI_PID" 2>/dev/null; do
-      sleep 0.1; i=$((i + 1))
-    done
-    kill -KILL "$SC_BONSAI_PID" 2>/dev/null
-    wait "$SC_BONSAI_PID" 2>/dev/null
-  fi
-  SC_BONSAI_PID=""
-  if [ -n "${SC_BONSAI_LOG:-}" ]; then
-    rm -f "$SC_BONSAI_LOG"
-  fi
-  SC_BONSAI_LOG=""
 }
 
 sc_need() {
@@ -152,6 +134,33 @@ sc_show() {
   else
     printf '%s\n' "$1"
   fi
+}
+
+# sc_write_file PATH TEXT — writes TEXT to PATH, creating its folder.
+sc_write_file() {
+  mkdir -p "$(dirname "$1")" && printf '%s\n' "$2" > "$1"
+}
+
+# sc_read_transcript COMMAND FILE — sets SC_INPUT to the transcript a command
+# was given: FILE, else stdin (so commands compose with `live`/`transcribe`),
+# else -- with a real terminal sitting there, where reading stdin would just
+# hang waiting for typed input -- a file browsed for with fzf. Exits with an
+# actionable message when there is nothing to read.
+sc_read_transcript() {
+  SC_INPUT=""
+  local cmd="$1" file="$2"
+  if [ -z "$file" ] && [ -t 0 ]; then
+    file=$(sc_pick_transcript_file) \
+      || sc_die "$cmd: no FILE given and nothing piped in. Pass a file, pipe a transcript in, or install fzf to browse for one (brew install fzf)."
+    [ -n "$file" ] || sc_die "$cmd: no file selected"
+  fi
+  if [ -n "$file" ]; then
+    [ -f "$file" ] || sc_die "no such file: $file"
+    SC_INPUT=$(cat "$file")
+  else
+    SC_INPUT=$(cat)
+  fi
+  [ -n "$SC_INPUT" ] || sc_die "$cmd: empty transcript (pass a file, or pipe one in via stdin)"
 }
 
 # sc_to_clipboard TEXT — best-effort copy to the macOS clipboard via pbcopy.
@@ -298,7 +307,9 @@ OPTIONS (note / session)
   --model NAME          llama3.1:8b (default) or bonsai — see OTHER MODELS
   --format soap|dap|birp Note format           (default: soap)
   --style STYLE         narrative (default), structured, or combined — see STYLES
-  --host URL            Ollama server URL      (default: http://localhost:11434)
+  --host URL            Ollama server URL      (default: http://localhost:11434;
+                        anywhere else sends the transcript off this Mac, with
+                        a warning)
 
 OPTIONS (note only)
   --duration MINUTES    Start the note with "MINUTES minutes, telehealth"

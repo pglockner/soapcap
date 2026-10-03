@@ -80,10 +80,9 @@ sc_cmd_doctor() {
     omodel="llama3.1:8b"; olevel="--  "; oneed="only needed to switch back to llama3.1:8b"
   fi
   if command -v ollama >/dev/null 2>&1; then
-    local tags
-    if tags=$(curl -s --max-time 3 "$SOAPCAP_OLLAMA_HOST/api/tags" 2>/dev/null) && [ -n "$tags" ]; then
-      if printf '%s' "$tags" | jq -e --arg m "$omodel" \
-           '[.models[]?.name] | any(. == $m or startswith($m + ":"))' >/dev/null 2>&1; then
+    local pulled
+    if pulled=$(sc_ollama_models "$SOAPCAP_OLLAMA_HOST"); then
+      if printf '%s\n' "$pulled" | sc_ollama_has "$omodel"; then
         if [ "$omodel" = "$SOAPCAP_MODEL" ]; then
           sc_info "  ok    ollama running, $omodel pulled — 'note' is ready"
         else

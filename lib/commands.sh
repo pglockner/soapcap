@@ -1,5 +1,6 @@
 # shellcheck shell=bash
-# soapcap — subcommand implementations, one file per command.
+# soapcap — the commands (doctor, model, live, note, deidentify, session) and
+# the note-model pieces they draft with (generate, ollama, bonsai).
 
 _sc_lib="${BASH_SOURCE[0]%/*}"
 # shellcheck source=lib/doctor.sh
@@ -10,6 +11,8 @@ _sc_lib="${BASH_SOURCE[0]%/*}"
 . "$_sc_lib/live.sh"
 # shellcheck source=lib/generate.sh
 . "$_sc_lib/generate.sh"
+# shellcheck source=lib/ollama.sh
+. "$_sc_lib/ollama.sh"
 # shellcheck source=lib/bonsai.sh
 . "$_sc_lib/bonsai.sh"
 # shellcheck source=lib/note.sh

@@ -1,6 +1,61 @@
 # shellcheck shell=bash
-# Talking to the note model: output safety nets, context sizing, the
-# drafting status line, and the Ollama request.
+# Talking to the note model: the backend interface, output safety nets,
+# context sizing, and the drafting status line.
+
+# ---- backends ---------------------------------------------------------------
+# A note model is reached through one of two backends: `bonsai` (lib/bonsai.sh)
+# or Ollama, for every other tag (lib/ollama.sh). Each provides the same five
+# functions, sc_<backend>_{label,check,start,request,stop}, and the sc_model_*
+# functions below are the only place that tells the two apart. Adding a
+# backend means one new file and one line in sc_backend.
+
+# sc_backend MODEL — prints the name of the backend that serves MODEL.
+sc_backend() {
+  case "$1" in
+    bonsai) echo bonsai ;;
+    *)      echo ollama ;;
+  esac
+}
+
+# sc_model_label MODEL — MODEL's name as shown on the status line.
+sc_model_label() { "sc_$(sc_backend "$1")_label" "$1"; }
+
+# sc_model_check MODEL HOST — silent when MODEL is ready to draft a note;
+# otherwise says what to fix and fails. Loads nothing, so it is quick enough
+# to run before a recording starts.
+sc_model_check() { "sc_$(sc_backend "$1")_check" "$1" "$2"; }
+
+# sc_model_start MODEL HOST CTX — gets MODEL ready for a note's requests,
+# every one of them within a context of CTX tokens. Remembers what it
+# started (SC_ACTIVE_MODEL/HOST) for sc_model_stop.
+sc_model_start() {
+  if [ -n "${SC_ACTIVE_MODEL:-}" ] && [ "$SC_ACTIVE_MODEL" != "$1" ]; then
+    sc_model_stop
+  fi
+  SC_ACTIVE_MODEL="$1"; SC_ACTIVE_HOST="$2"
+  "sc_$(sc_backend "$1")_start" "$1" "$2" "$3" && return 0
+  SC_ACTIVE_MODEL=""; SC_ACTIVE_HOST=""
+  return 1
+}
+
+# sc_model_request MODEL HOST PROMPT TITLE CAP [SCHEMA] — one request to the
+# started model, with TITLE on the status line while it runs. CAP is the
+# output cap in tokens; SCHEMA, if given, a JSON schema the reply must match.
+# Sets SC_RAW_NOTE (the reply) and SC_RAW_DONE ("stop", or "length" when the
+# cap cut it off).
+sc_model_request() { "sc_$(sc_backend "$1")_request" "$@"; }
+
+# sc_model_stop — frees the memory of whatever sc_model_start started: stops
+# Bonsai's server, or has Ollama unload its model. Does nothing when no
+# model is active, so it is safe to call from the EXIT trap (sc_cleanup).
+sc_model_stop() {
+  [ -n "${SC_ACTIVE_MODEL:-}" ] || return 0
+  "sc_$(sc_backend "$SC_ACTIVE_MODEL")_stop" "$SC_ACTIVE_MODEL" "${SC_ACTIVE_HOST:-}"
+  SC_ACTIVE_MODEL=""; SC_ACTIVE_HOST=""
+  return 0
+}
+
+# ---- output safety nets, context sizing, status line -------------------------
 
 # sc_strip_transcript_echo — safety net: small models sometimes ignore the
 # "don't repeat the transcript" instruction and echo it back after the
@@ -171,21 +226,26 @@ sc_spin_post() {
     # An array, not a string sliced per character: slicing counts bytes
     # outside a UTF-8 locale and would split these.
     local t0=$SECONDS i=0 frames=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
-    local tokens=0 t_first="" progress=""
+    local tokens=0 t_first="" progress="" drawn=""
     while kill -0 "$cpid" 2>/dev/null; do
-      progress=""
-      if [ -n "$count" ]; then
-        tokens=$(wc -l < "$out" 2>/dev/null | tr -d ' ')
-        if [ "${tokens:-0}" -gt 0 ]; then
-          [ -n "$t_first" ] || t_first=$SECONDS
-          progress=$(sc_token_progress "$tokens" $((SECONDS - t_first)))
+      # Redrawn once a second, but the request is checked on five times as
+      # often, so a finished one isn't waited on for the rest of a second.
+      if [ "$SECONDS" != "$drawn" ]; then
+        drawn=$SECONDS
+        progress=""
+        if [ -n "$count" ]; then
+          tokens=$(wc -l < "$out" 2>/dev/null | tr -d ' ')
+          if [ "${tokens:-0}" -gt 0 ]; then
+            [ -n "$t_first" ] || t_first=$SECONDS
+            progress=$(sc_token_progress "$tokens" $((SECONDS - t_first)))
+          fi
         fi
+        sc_status_line "$title" $((SECONDS - t0)) "${frames[$((i % 10))]}" "$progress"
+        i=$((i + 1))
       fi
-      sc_status_line "$title" $((SECONDS - t0)) "${frames[$((i % 10))]}" "$progress"
-      i=$((i + 1))
       # `wait` on a background sleep, not a foreground one, so a signal is
       # still acted on at once.
-      sleep 1 & wait $! 2>/dev/null
+      sleep 0.2 & wait $! 2>/dev/null
     done
     wait "$cpid"
     rc=$?
@@ -210,78 +270,4 @@ sc_spin_post() {
   trap - INT TERM
   rm -f "$body"
   return "$rc"
-}
-
-# sc_ollama_generate MODEL HOST PROMPT TITLE [HEADROOM] [EXTRA] — sets
-# SC_RAW_NOTE and SC_RAW_DONE (Ollama's done_reason). Talks to Ollama's
-# HTTP API directly rather than shelling out to `ollama run`: the CLI
-# renders a spinner/progress UI even when its stdout isn't a terminal,
-# which corrupts captured output. EXTRA is a JSON object deep-merged into
-# the request (the structured style's schema and sampling settings). Always
-# sent with think:false: reasoning made notes worse in testing.
-# without it the request is exactly what the narrative style always sent.
-sc_ollama_generate() {
-  SC_RAW_NOTE=""; SC_RAW_DONE=""
-  local model="$1" host="$2" prompt="$3" title="$4" headroom="${5:-1024}" extra="${6:-}"
-
-  local tags
-  if ! tags=$(curl -s --max-time 5 "$host/api/tags"); then
-    sc_err "can't reach Ollama at $host — start it with: brew services start ollama (or: ollama serve)"
-    return 1
-  fi
-  if ! printf '%s' "$tags" | jq -e --arg m "$model" \
-        '[.models[]?.name] | any(. == $m or startswith($m + ":"))' >/dev/null 2>&1; then
-    sc_err "model '$model' is not pulled — run: ollama pull $model"
-    return 1
-  fi
-
-  # Ollama's own default context (historically 2048) is far too small.
-  local ctx payload resp_file rc response
-  ctx=$(sc_estimate_ctx "$prompt" "$headroom" 4096)
-  payload=$(jq -n --arg model "$model" --arg prompt "$prompt" --argjson num_ctx "$ctx" \
-    '{model: $model, prompt: $prompt, stream: true, think: false, options: {num_ctx: $num_ctx}}')
-  if [ -n "$extra" ]; then
-    payload=$(printf '%s' "$payload" | jq --argjson x "$extra" '. * $x')
-  fi
-
-  sc_tmpfile resp_file || return 1
-  sc_spin_post "$title" "$host/api/generate" "$payload" "$resp_file" 300 count
-  rc=$?
-  # Streamed: one JSON object per token. Fold them back into the single
-  # object a non-streamed reply would have been (text joined, the last
-  # chunk's done_reason, any error).
-  response=$(jq -s 'if length == 0 then empty else {
-      response: (map(.response // "") | join("")),
-      done_reason: (map(.done_reason // empty) | last),
-      error: (map(.error // empty) | first) } end' "$resp_file" 2>/dev/null)
-  rm -f "$resp_file"
-  # A mid-response --max-time timeout (curl exit 28) leaves a non-empty but
-  # partial/invalid file -- check curl's own exit status, not just whether
-  # anything got written, or a timeout gets misreported as "no content"
-  # further down instead of the actionable message here.
-  if [ "$rc" -ne 0 ] || [ -z "$response" ]; then
-    sc_err "request to Ollama failed"; return 1
-  fi
-  if printf '%s' "$response" | jq -e '.error' >/dev/null 2>&1; then
-    sc_err "Ollama error: $(printf '%s' "$response" | jq -r '.error')"
-    return 1
-  fi
-  SC_RAW_NOTE=$(printf '%s' "$response" | jq -r '.response // empty')
-  # shellcheck disable=SC2034  # read by sc_generate_note (lib/note.sh)
-  SC_RAW_DONE=$(printf '%s' "$response" | jq -r '.done_reason // empty')
-  [ -n "$SC_RAW_NOTE" ] || { sc_err "Ollama returned no content"; return 1; }
-}
-
-# sc_model_stop MODEL HOST — frees the model's memory once a note is done:
-# stops Bonsai's server, or asks Ollama to unload the model now rather than
-# keep it loaded for its default five minutes. Best effort -- a failed
-# unload only means Ollama drops it later on its own.
-sc_model_stop() {
-  if [ "$1" = bonsai ]; then
-    sc_bonsai_stop
-  else
-    curl -s --max-time 5 -X POST "$2/api/generate" -H 'Content-Type: application/json' \
-      -d "$(jq -nc --arg m "$1" '{model: $m, keep_alive: 0}')" >/dev/null 2>&1
-  fi
-  return 0
 }
