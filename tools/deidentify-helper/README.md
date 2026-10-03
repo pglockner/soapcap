@@ -3,7 +3,7 @@
 The Swift half of `soapcap deidentify` — see the main [README](../../README.md#de-identify)
 for what it does and how to use it from soapcap itself. This file is just
 the build command and the stdin/stdout contract the bash layer
-(`sc_deidentify_transcript` in `lib/commands.sh`) depends on.
+(`sc_deidentify_transcript` in `lib/deidentify.sh`) depends on.
 
 ## Requirements
 
