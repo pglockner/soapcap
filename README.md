@@ -14,29 +14,10 @@ leaves the machine. `soapcap session` walks through all of it with prompts.
 
 ## How it works
 
-```
-Zoom / Meet / Teams / Doxy.me                   your microphone
-        (system audio)                                 │
-              │                                        │
-              └──────────►  yap listen-and-dictate  ◄──┘
-                           (Apple SpeechAnalyzer,
-                            fully on-device)
-                                    │  JSON, via a $TMPDIR file
-                                    │  deleted on every exit path
-                                    ▼
-                           soapcap render
-                                    │
-                                    ▼
-                    Therapist: ...          ← stdout (default)
-                    Client: ...             ← or --out FILE
-                                    │
-                                    ▼  soapcap note
-                        Ollama or Bonsai (local)
-                                    │
-                                    ▼
-                    SUBJECTIVE: ...         ← stdout (default)
-                    OBJECTIVE: ...          ← or --out FILE
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/how-it-works-dark.svg">
+  <img src="assets/how-it-works-light.svg" alt="Call audio and your microphone feed soapcap live (Apple SpeechAnalyzer, no audio recorded), which produces a transcript. The transcript goes straight to soapcap note (Ollama or Bonsai, a local model), or first through the optional soapcap deidentify, which redacts names and identifiers. The draft note is shown in the terminal or copied. Everything runs on this Mac; a transcript or note is saved to a file only if you ask.">
+</picture>
 
 `soapcap` never talks to Zoom or any meeting API — it captures **system
 audio** (whatever your Mac is playing) plus your **microphone**, so it works
