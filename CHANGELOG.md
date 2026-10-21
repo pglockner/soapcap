@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.13 (2026-10-21)
+
+- Changed Bonsai SOAP notes to read the transcript once, on its own, and start the draft and Objective prompts with it, so the Objective pass no longer reads the transcript again: a 60-minute sample went from 500 s to 359 s and a 17-minute one from 244 s to 208 s.
+
 ## 0.12 (2026-10-03)
 
 - Changed `note` to check each prose draft for a missing section, or one that is empty or just "Not addressed in this session", and to draft again up to `SOAPCAP_NOTE_ATTEMPTS` times (default 3), keeping the draft with the fewest faults and warning when it is still incomplete.
