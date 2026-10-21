@@ -322,10 +322,15 @@ assert_eq "bonsai: server is stopped after the note" "stopped" "$(tail -n 1 "$FL
 assert_eq "bonsai: no server left running" "0" "$FLOW_LLAMA_LEFT"
 assert_eq "bonsai: thinking is turned off" "false" \
   "$(jq -r .chat_template_kwargs.enable_thinking "$FLOW_DIR/first.json")"
+sed -n 2p "$FLOW_DIR/payloads.jsonl" > "$FLOW_DIR/draft.json"
 assert_eq "bonsai: tested sampling settings" "0.7 0.8 20 2000" \
-  "$(jq -r '"\(.temperature) \(.top_p) \(.top_k) \(.max_tokens)"' "$FLOW_DIR/first.json")"
+  "$(jq -r '"\(.temperature) \(.top_p) \(.top_k) \(.max_tokens)"' "$FLOW_DIR/draft.json")"
 assert_eq "bonsai: sends the SOAP prompt and transcript as one user message" "yes" \
-  "$(jq -r '.messages | length == 1 and .[0].role == "user" and (.[0].content | contains("TRANSCRIPT:\nTherapist: hi"))' "$FLOW_DIR/first.json" | sed 's/true/yes/; s/false/no/')"
+  "$(jq -r '.messages | length == 1 and .[0].role == "user" and (.[0].content | contains("TRANSCRIPT:\nTherapist: hi"))' "$FLOW_DIR/draft.json" | sed 's/true/yes/; s/false/no/')"
+assert_eq "bonsai: reads the transcript alone first, and the draft and Objective open with it" "1 true true" \
+  "$(jq -rs '(.[0].messages[0].content) as $o
+    | "\(.[0].max_tokens) \(.[1].messages[0].content | startswith($o)) \(.[2].messages[0].content | startswith($o))"' \
+    "$FLOW_DIR/payloads.jsonl")"
 assert_eq "bonsai: one server start for the note and its Objective" "1" \
   "$(grep -c '^started' "$FLOW_DIR/llama.log" | tr -d ' ')"
 assert_contains "bonsai: the Objective pass is filled in" "$FLOW_OUT" "On time via video. Stub engaged."

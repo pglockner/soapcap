@@ -69,13 +69,31 @@ sc_structured_prompt() {
   printf '%s\n' "$transcript" | awk '{printf "%d | %s\n", NR, $0}'
 }
 
-# sc_objective_prompt TRANSCRIPT — prints the SOAP Objective pass's prompt.
-# Its own prompt rather than the shared rules: those forbid judging affect,
-# mood or speech from a transcript, which is exactly what this pass does,
-# for the therapist's mental-status Objective.
+# sc_transcript_opening TRANSCRIPT — prints the transcript as a prompt's
+# opening. Prompts that put the transcript first all begin with exactly this
+# text, so a backend that resumes from a shared opening reads it once (see
+# sc_model_resumes_opening).
+sc_transcript_opening() {
+  printf 'TRANSCRIPT:\n%s' "$1"
+}
+
+# sc_note_prompt FILE TRANSCRIPT [FIRST] — prints a prose prompt: FILE's
+# instructions, then the transcript; with FIRST, the transcript first.
+sc_note_prompt() {
+  if [ -n "${3:-}" ]; then
+    printf '%s\n\n%s\n' "$(sc_transcript_opening "$2")" "$(cat "$1")"
+  else
+    printf '%s\n\n%s\n' "$(cat "$1")" "$(sc_transcript_opening "$2")"
+  fi
+}
+
+# sc_objective_prompt TRANSCRIPT [FIRST] — prints the SOAP Objective pass's
+# prompt (sc_note_prompt's FIRST). Its own prompt rather than the shared
+# rules: those forbid judging affect, mood or speech from a transcript,
+# which is exactly what this pass does, for the therapist's mental-status
+# Objective.
 sc_objective_prompt() {
-  cat "$SC_ROOT/prompts/objective.md"
-  printf '\nTRANSCRIPT:\n%s\n' "$1"
+  sc_note_prompt "$SC_ROOT/prompts/objective.md" "$1" "${2:-}"
 }
 
 # sc_render_objective JSON NOTE — prints the SOAP Objective body: the fixed
@@ -260,12 +278,29 @@ sc_generate_note() {
     sc_info "note: $model hasn't been tested with soapcap's prompts — proofread it with extra care."
   fi
 
+  # With no client speech at all (the other side of the call wasn't
+  # captured), there's nobody to assess for SOAP's Objective: the model
+  # would rate the therapist instead.
+  local client=1
+  printf '%s\n' "$transcript" | awk -v l="$SOAPCAP_SYSTEM_LABEL: " 'index($0, l) == 1 { f = 1 } END { exit !f }' \
+    || client=""
+
+  # A narrative SOAP note with client speech takes two passes over the
+  # transcript, the draft and the Objective. A backend that keeps its place
+  # only near the end of a prompt reads the transcript on its own first and
+  # then resumes after it, so both prompts put it first (see
+  # sc_transcript_opening). For one pass it would just be extra reading;
+  # the other styles' structured pass numbers the transcript's lines, so
+  # it can't share the opening.
+  local shared=""
+  if [ "$format" = soap ] && [ -n "$client" ] && [ "$style" = narrative ] \
+     && sc_model_resumes_opening "$model"; then
+    shared=1
+  fi
+
   local full_prompt="" sprompt="" rc=0 note=""
   if [ "$style" != structured ]; then
-    full_prompt="$(cat "$prompt_file")
-
-TRANSCRIPT:
-$transcript"
+    full_prompt=$(sc_note_prompt "$prompt_file" "$transcript" "$shared")
   fi
   if [ "$style" != narrative ]; then
     sprompt=$(sc_structured_prompt "$format" "$transcript")
@@ -279,16 +314,12 @@ $transcript"
   fi
 
   # SOAP's Objective always comes from a pass of its own (see
-  # sc_objective_prompt), whatever the style.
-  # With no client speech at all (the other side of the call wasn't
-  # captured), there's nobody to assess: the model would rate the
-  # therapist instead. Skip the pass and leave Objective to the clinician.
-  local oprompt="" ojson="null" sjson="" client=1
-  printf '%s\n' "$transcript" | awk -v l="$SOAPCAP_SYSTEM_LABEL: " 'index($0, l) == 1 { f = 1 } END { exit !f }' \
-    || client=""
+  # sc_objective_prompt), whatever the style. With no client speech the
+  # pass is skipped and the Objective left to the clinician.
+  local oprompt="" ojson="null" sjson=""
   if [ "$format" = soap ]; then
     if [ -n "$client" ]; then
-      oprompt=$(sc_objective_prompt "$transcript")
+      oprompt=$(sc_objective_prompt "$transcript" "$shared")
     else
       ojson='{"no_client": true}'
       sc_info "note: no $SOAPCAP_SYSTEM_LABEL lines in the transcript — the Objective is left for you to complete."
@@ -304,6 +335,12 @@ $transcript"
   if [ -n "$sprompt" ]; then c=$(sc_estimate_ctx "$sprompt" 3072 0); [ "$c" -gt "$ctx" ] && ctx=$c; fi
   if [ -n "$oprompt" ]; then c=$(sc_estimate_ctx "$oprompt" 3072 0); [ "$c" -gt "$ctx" ] && ctx=$c; fi
   sc_model_start "$model" "$host" "$ctx" || return 1
+  if [ -n "$shared" ]; then
+    # The reply isn't used. If this fails the draft still works; it just
+    # reads the transcript itself.
+    sc_model_request "$model" "$host" "$(sc_transcript_opening "$transcript")" \
+      "Reading the transcript with ${label}…" 1
+  fi
 
   if [ -n "$full_prompt" ]; then
     # A small model sometimes leaves a section out, or writes "Not
