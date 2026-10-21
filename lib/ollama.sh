@@ -34,6 +34,10 @@ sc_warn_remote_host() {
 
 sc_ollama_label() { printf '%s\n' "$1"; }
 
+# sc_ollama_resumes_opening — no: Ollama resumes from any shared prefix,
+# and its prompts were tested with the instructions first.
+sc_ollama_resumes_opening() { return 1; }
+
 # sc_ollama_check MODEL HOST — silent when MODEL is ready to draft with;
 # otherwise says what to fix and fails.
 sc_ollama_check() {

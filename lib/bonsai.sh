@@ -6,6 +6,13 @@
 
 sc_bonsai_label() { printf 'Bonsai\n'; }
 
+# sc_bonsai_resumes_opening — yes: a hybrid model keeps its place only near
+# the end of a prompt, so a transcript in the middle of one is read again by
+# the next request. Measured on the 60-minute sample: a SOAP note's
+# Objective pass took 194 s re-reading the transcript and 48 s resuming
+# after it.
+sc_bonsai_resumes_opening() { return 0; }
+
 # sc_bonsai_installed — true when both halves of the Bonsai setup exist.
 sc_bonsai_installed() {
   [ -x "$SOAPCAP_BONSAI_SERVER" ] && [ -f "$SOAPCAP_BONSAI_GGUF" ]

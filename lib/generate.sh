@@ -4,10 +4,10 @@
 
 # ---- backends ---------------------------------------------------------------
 # A note model is reached through one of two backends: `bonsai` (lib/bonsai.sh)
-# or Ollama, for every other tag (lib/ollama.sh). Each provides the same five
-# functions, sc_<backend>_{label,check,start,request,stop}, and the sc_model_*
-# functions below are the only place that tells the two apart. Adding a
-# backend means one new file and one line in sc_backend.
+# or Ollama, for every other tag (lib/ollama.sh). Each provides the same six
+# functions, sc_<backend>_{label,check,start,request,stop,resumes_opening},
+# and the sc_model_* functions below are the only place that tells the two
+# apart. Adding a backend means one new file and one line in sc_backend.
 
 # sc_backend MODEL — prints the name of the backend that serves MODEL.
 sc_backend() {
@@ -19,6 +19,12 @@ sc_backend() {
 
 # sc_model_label MODEL — MODEL's name as shown on the status line.
 sc_model_label() { "sc_$(sc_backend "$1")_label" "$1"; }
+
+# sc_model_resumes_opening MODEL — true when MODEL's backend gains from
+# reading a transcript on its own before the prompts that open with it
+# (sc_transcript_opening): it keeps its place only near the end of a prompt,
+# so it otherwise reads the transcript again for each one.
+sc_model_resumes_opening() { "sc_$(sc_backend "$1")_resumes_opening"; }
 
 # sc_model_check MODEL HOST — silent when MODEL is ready to draft a note;
 # otherwise says what to fix and fails. Loads nothing, so it is quick enough
