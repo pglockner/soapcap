@@ -26,7 +26,16 @@ if [ ! -d .git ]; then
   exit 1
 fi
 
+# Apple's git checks GitHub's certificate against /etc/ssl/cert.pem, which
+# misses Apple's certificate blocklists; the SecureTransport backend verifies
+# through macOS's own trust settings. Other gits (Homebrew's) lack it and
+# would refuse the setting, so it's only passed to Apple's.
+git=(git)
+if [ "$(command -v git)" = /usr/bin/git ] && /usr/bin/curl -V | grep -q SecureTransport; then
+  git=(git -c http.sslBackend=secure-transport)
+fi
+
 echo "==> Checking for soapcap updates..."
-git pull
+"${git[@]}" pull
 echo
 read -r -p "Press Enter to close..." _ || true

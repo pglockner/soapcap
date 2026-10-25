@@ -3,6 +3,8 @@
 ## 0.13 (2026-10-21)
 
 - Changed Bonsai SOAP notes to read the transcript once, on its own, and start the draft and Objective prompts with it, so the Objective pass no longer reads the transcript again: a 60-minute sample went from 500 s to 359 s and a 17-minute one from 244 s to 208 s.
+- Changed `curl` and `update.command` to check https certificates through macOS's own trust settings instead of `/etc/ssl/cert.pem`, which still trusted the compromised eMudhra certificate authorities (October 2026); the README's `git clone` command does the same.
+- Changed the de-identify helper's packages to certifi 2026.10.23, which no longer trusts those authorities; re-run `tools/deidentify/install.sh` to update an existing setup.
 
 ## 0.12 (2026-10-03)
 

@@ -60,7 +60,7 @@ with any conferencing tool.
 ## Install
 
 ```sh
-git clone https://github.com/pglockner/soapcap.git
+git -c http.sslBackend=secure-transport clone https://github.com/pglockner/soapcap.git
 cd soapcap
 ./install.sh           # brew install yap jq (force-linked — macOS 26 ships
                        # its own /usr/bin/jq, which can otherwise shadow
@@ -70,6 +70,11 @@ cd soapcap
                        # Bonsai, both, or none (re-runs only offer what
                        # isn't installed yet)
 ```
+
+The `-c http.sslBackend=secure-transport` part makes git check GitHub's
+certificate with macOS's own trust settings, which Apple keeps up to date
+when a certificate authority is compromised. If git answers that the backend
+is unsupported (Homebrew's git), run the same command without it.
 
 No git installed? Click **Code → Download ZIP** on the
 [GitHub page](https://github.com/pglockner/soapcap), unzip it, then `cd`

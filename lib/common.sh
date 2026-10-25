@@ -1,6 +1,12 @@
 # shellcheck shell=bash
 # soapcap — shared helpers, config loading, cleanup. Sourced by bin/soapcap.
 
+# curl checks https certificates against /etc/ssl/cert.pem by default, which
+# misses Apple's certificate blocklists (the eMudhra CA compromise of Oct 2026
+# went unblocked there). macOS's curl can verify through the system's own
+# trust settings instead; a curl without that backend ignores this.
+export CURL_SSL_BACKEND=secure-transport
+
 # ---- defaults (override via env or ~/.config/soapcap/config.sh) --------------
 SOAPCAP_MIC_LABEL="${SOAPCAP_MIC_LABEL:-Therapist}"
 SOAPCAP_SYSTEM_LABEL="${SOAPCAP_SYSTEM_LABEL:-Client}"
