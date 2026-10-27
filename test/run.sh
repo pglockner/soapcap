@@ -395,6 +395,15 @@ The current plan of care will continue." \
   "$(printf 'A:\nx\n\nPLAN:\nNot addressed in this session.\n' | sc_default_plan)"
 assert_eq "default plan: so does an empty Plan" "PLAN:
 The current plan of care will continue." "$(printf 'PLAN:\n\n' | sc_default_plan)"
+assert_eq "default plan: so does \"Not addressed\" on the header line" "A:
+x
+
+PLAN:
+The current plan of care will continue." \
+  "$(printf 'A:\nx\n\nPLAN: Not addressed in this session.\n' | sc_default_plan)"
+assert_eq "default plan: a real Plan on the header line is left alone" \
+  "PLAN: Weekly sessions. The current plan of care will continue." \
+  "$(printf 'PLAN: Weekly sessions. The current plan of care will continue.\n\n' | sc_default_plan)"
 assert_eq "default plan: a real Plan is left alone" "PLAN:
 Weekly sessions. Not addressed in this session." \
   "$(printf 'PLAN:\nWeekly sessions. Not addressed in this session.\n' | sc_default_plan)"
