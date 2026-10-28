@@ -142,17 +142,18 @@ sc_add_objective() {
 # the plan of care, but a model can still fall back on the other sections'
 # "Not addressed in this session" (seen with llama3.1:8b) or leave Plan
 # empty. Reads a note on stdin; either case becomes the plan-of-care
-# sentence. Plan is the last section, so its body runs to the end.
+# sentence. Plan is the last section, so its body runs to the end, and it
+# can start on the header line.
 sc_default_plan() {
   awk "$SC_NOTE_AWK"'
     { lines[NR] = $0 }
     hdr("PLAN") { p = NR }
     END {
-      body = ""
+      body = lines[p]; sub(/^[^:]*:/, "", body)
       for (i = p + 1; p && i <= NR; i++) body = body lines[i]
       empty = p && hollow(body)
-      for (i = 1; i <= (empty ? p : NR); i++) print lines[i]
-      if (empty) print "The current plan of care will continue."
+      for (i = 1; i <= (empty ? p - 1 : NR); i++) print lines[i]
+      if (empty) { print "PLAN:"; print "The current plan of care will continue." }
     }
   '
 }
