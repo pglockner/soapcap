@@ -16,10 +16,13 @@
 # voice never loops back into system audio.
 #
 # The dedupe pass removes that leak: any mic-side segment whose wording is
-# largely contained in a system-side segment nearby in time is dropped as
-# an echo, not real mic-side speech. Bias is toward NOT dropping when
-# unsure — a missed echo is a harmless duplicate line; a wrongly dropped
-# real segment is lost content — so the thresholds below are conservative.
+# largely contained in a system-side segment nearby in time, and has no
+# more words than it, is dropped as an echo, not real mic-side speech. An
+# echo is a piece of what was played, so a longer mic segment that a short
+# reply repeats a few words of is your own speech and stays. Bias is
+# toward NOT dropping when unsure — a missed echo is a harmless duplicate
+# line; a wrongly dropped real segment is lost content — so the thresholds
+# below are conservative.
 #
 # Verified against a real captured conversation (yap 1.2.1, macOS 26): the
 # two channels segment near-identically when the "leak" is a clean copy
@@ -88,6 +91,7 @@ sc_render_transcript() {
                  and any($sys_segs[];
                        ($m.start - $window) <= .end
                        and .start <= ($m.end + $window)
+                       and ($m.ws | length) <= (.ws | length)
                        and (containment($m.ws; .ws) >= $thresh))
               then $m + { echo: true }
               else $m
