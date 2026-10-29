@@ -77,6 +77,16 @@ assert_eq "dedupe: keeps same-content segments far apart in time" \
   "Client: going overall
 Therapist: going overall" "$result"
 
+# A short reply repeating a few words of a longer mic segment -- the mic
+# segment is real speech, not an echo of the shorter one.
+result=$(jq -n '{segments: [
+  {speaker:"Therapist", start:0,   end:2, id:1, text:"So you barely slept this week"},
+  {speaker:"Client",    start:2.5, end:3, id:2, text:"barely slept"}
+]}' | sc_render_transcript Therapist Client 1)
+assert_eq "dedupe: keeps a longer mic segment a short reply repeats" \
+  "Therapist: So you barely slept this week
+Client: barely slept" "$result"
+
 # Short backchannel below minwords -- never auto-dropped even if it matches.
 result=$(jq -n '{segments: [
   {speaker:"Client", start:0,   end:1, id:1, text:"Okay"},
