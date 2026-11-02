@@ -21,10 +21,10 @@ SOAPCAP_LOCALE=""
 # SOAPCAP_DEDUPE_MINWORDS=2
 
 # `note` — local SOAP/DAP/BIRP generation. Defaults shown; uncomment to
-# tune. Tested models: llama3.1:8b (Ollama, the default) and bonsai
-# (tools/bonsai/install.sh). Any other Ollama tag works but is untested
+# tune. Tested models: gemma4-e4b (the default) and bonsai, each set up with
+# tools/models/install.sh NAME. Any Ollama tag works too but is untested
 # with soapcap's prompts — see README "Draft a note".
-# SOAPCAP_MODEL="llama3.1:8b"       # or "bonsai"
+# SOAPCAP_MODEL="gemma4-e4b"        # or "bonsai"
 # SOAPCAP_FORMAT="soap"             # soap | dap | birp
 # SOAPCAP_NOTE_ATTEMPTS=3           # drafts before settling for a note with
 #                                   # a section missing or empty; 1 = never
@@ -33,7 +33,8 @@ SOAPCAP_LOCALE=""
 #                                   # see README "Note style"; combined takes
 #                                   # roughly twice as long, and the window
 #                                   # app doesn't show its review yet
-# SOAPCAP_OLLAMA_HOST="http://localhost:11434"   # any other machine gets the
+# SOAPCAP_OLLAMA_HOST="http://localhost:11434"   # untested Ollama models
+#                                   # only; any other machine gets the
 #                                   # transcript over the network (soapcap
 #                                   # warns when it isn't this Mac)
 
@@ -53,10 +54,12 @@ SOAPCAP_LOCALE=""
 # "Desktop & Documents Folders", Dropbox, ...).
 # SOAPCAP_SAVE_DIR="$HOME/soapcap/transcripts"
 
-# Bonsai's install location (export it when running tools/bonsai/install.sh
-# too, if you change it) — or instead point the two paths at a llama-server
-# build of PrismML's llama.cpp fork and the PTQ1_0 GGUF you already have.
-# SOAPCAP_BONSAI_DIR="$HOME/.local/share/soapcap/bonsai"
-# SOAPCAP_BONSAI_SERVER="$HOME/somewhere/llama.cpp/build/bin/llama-server"
+# Where the tested models' engine lives (export it when running
+# tools/models/install.sh too, if you change it) — or instead point these
+# paths at a llama-server build of PrismML's llama.cpp fork and GGUFs you
+# already have.
+# SOAPCAP_ENGINE_DIR="$HOME/.local/share/soapcap/engine"
+# SOAPCAP_LLAMA_SERVER="$HOME/somewhere/llama.cpp/build/bin/llama-server"
+# SOAPCAP_GEMMA_GGUF="$HOME/somewhere/gemma-4-E4B-it-Q4_K_M.gguf"
 # SOAPCAP_BONSAI_GGUF="$HOME/somewhere/Ternary-Bonsai-2-27B-PTQ1_0.gguf"
-# SOAPCAP_BONSAI_PORT=18080         # localhost port for its temporary server
+# SOAPCAP_ENGINE_PORT=18080         # localhost port for its temporary server

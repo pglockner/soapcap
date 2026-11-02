@@ -275,6 +275,7 @@ sc_generate_note() {
   sc_check_format "$format" || return 1
   local prompt_file="$SC_ROOT/prompts/$format.md"
 
+  sc_retired_notice "$model"
   if ! sc_model_catalog | cut -d'|' -f1 | grep -qx "$model"; then
     sc_info "note: $model hasn't been tested with soapcap's prompts — proofread it with extra care."
   fi

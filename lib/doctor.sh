@@ -24,22 +24,22 @@ sc_cmd_doctor() {
     fail=1
   fi
   if [ "$mem_gb" -ge 32 ] 2>/dev/null; then
-    sc_info "        ${mem_gb}GB: comfortable for 'note' with either llama3.1:8b or bonsai"
+    sc_info "        ${mem_gb}GB: comfortable for 'note' with either gemma4-e4b or bonsai"
   elif [ "$mem_gb" -ge 16 ] 2>/dev/null; then
-    sc_info "        ${mem_gb}GB: llama3.1:8b (default) works; close memory-heavy apps"
+    sc_info "        ${mem_gb}GB: gemma4-e4b (default) works; close memory-heavy apps"
     sc_info "        (browsers, other local models) first. bonsai fits too, but uses"
     sc_info "        most of this memory while it drafts"
   elif [ "$mem_gb" -gt 0 ] 2>/dev/null; then
-    sc_info "        ${mem_gb}GB: tight for local note drafting — close other apps before"
-    sc_info "        'note'; bonsai needs 16GB+"
+    sc_info "        ${mem_gb}GB: tight for local note drafting — gemma4-e4b takes ~6.5GB,"
+    sc_info "        so close other apps before 'note'; bonsai needs 16GB+"
   fi
 
   local disk_avail_kb disk_avail_gb
   disk_avail_kb=$(df -k "$HOME" 2>/dev/null | awk 'NR==2{print $4}')
   disk_avail_gb=$(( ${disk_avail_kb:-0} / 1048576 ))
   if [ "$disk_avail_gb" -lt 6 ] 2>/dev/null; then
-    sc_info "  WARN  only ${disk_avail_gb}GB free on $HOME's volume — Ollama models run"
-    sc_info "        several GB each (llama3.1:8b is ~5GB)"
+    sc_info "  WARN  only ${disk_avail_gb}GB free on $HOME's volume — note models run"
+    sc_info "        5–6GB each (gemma4-e4b is ~5GB)"
   fi
 
   if command -v yap >/dev/null 2>&1; then
@@ -72,43 +72,51 @@ sc_cmd_doctor() {
   fi
 
   sc_info ""
-  # With bonsai as the default, Ollama is optional: its gaps are "--"
-  # (informational), not WARN, so removing llama3.1:8b on purpose to free
-  # space doesn't read as a problem.
-  local omodel="$SOAPCAP_MODEL" olevel="WARN" oneed="needed for 'note'"
-  if [ "$omodel" = bonsai ]; then
-    omodel="llama3.1:8b"; olevel="--  "; oneed="only needed to switch back to llama3.1:8b"
-  fi
-  if command -v ollama >/dev/null 2>&1; then
-    local pulled
-    if pulled=$(sc_ollama_models "$SOAPCAP_OLLAMA_HOST"); then
-      if printf '%s\n' "$pulled" | sc_ollama_has "$omodel"; then
-        if [ "$omodel" = "$SOAPCAP_MODEL" ]; then
-          sc_info "  ok    ollama running, $omodel pulled — 'note' is ready"
-        else
-          sc_info "  ok    ollama running, $omodel pulled — 'note --model $omodel' is ready"
-        fi
+  # The tested models: a missing one is WARN only when it's the default.
+  local tag label pulled
+  while IFS='|' read -r tag _; do
+    label=$(sc_engine_label "$tag")
+    if sc_engine_installed "$tag"; then
+      if [ "$tag" = "$SOAPCAP_MODEL" ]; then
+        sc_info "  ok    $label set up — 'note' is ready"
       else
-        sc_info "  $olevel  ollama running, but $omodel is not pulled — $oneed"
-        sc_info "        run: ollama pull $omodel"
+        sc_info "  ok    $label set up — 'note --model $tag' is ready"
       fi
+    elif [ "$tag" = "$SOAPCAP_MODEL" ]; then
+      sc_info "  WARN  your default model, $label, isn't set up"
+      sc_info "        set up with: $SC_ROOT/tools/models/install.sh $tag   (or re-run install.sh)"
     else
-      sc_info "  $olevel  ollama installed but not running — $oneed"
-      sc_info "        run: brew services start ollama   (or: ollama serve)"
+      sc_info "  --    $label not set up — optional note model"
+      sc_info "        set up with: $SC_ROOT/tools/models/install.sh $tag"
     fi
-  else
-    sc_info "  --    ollama not installed — only needed for llama3.1:8b notes"
-    sc_info "        install with: brew install ollama"
+  done <<CATALOG
+$(sc_model_catalog)
+CATALOG
+
+  # Ollama only matters when the default is a model it serves.
+  if [ "$(sc_backend "$SOAPCAP_MODEL")" = ollama ]; then
+    if ! command -v ollama >/dev/null 2>&1; then
+      sc_info "  WARN  your default model, $SOAPCAP_MODEL, needs Ollama, which isn't installed"
+      sc_info "        install with: brew install ollama"
+    elif ! pulled=$(sc_ollama_models "$SOAPCAP_OLLAMA_HOST"); then
+      sc_info "  WARN  ollama installed but not running — needed for $SOAPCAP_MODEL"
+      sc_info "        run: brew services start ollama   (or: ollama serve)"
+    elif printf '%s\n' "$pulled" | sc_ollama_has "$SOAPCAP_MODEL"; then
+      sc_info "  ok    ollama running, $SOAPCAP_MODEL pulled — 'note' is ready (untested model)"
+    else
+      sc_info "  WARN  ollama running, but $SOAPCAP_MODEL is not pulled — needed for 'note'"
+      sc_info "        run: ollama pull $SOAPCAP_MODEL"
+    fi
   fi
 
-  if sc_bonsai_installed; then
-    sc_info "  ok    Bonsai set up — 'note --model bonsai' is ready"
-  elif [ "$SOAPCAP_MODEL" = bonsai ]; then
-    sc_info "  WARN  your default model is bonsai, but Bonsai isn't set up"
-    sc_info "        set up with: $SC_ROOT/tools/bonsai/install.sh"
-  else
-    sc_info "  --    Bonsai not set up — optional, slower but more careful note model"
-    sc_info "        set up with: $SC_ROOT/tools/bonsai/install.sh"
+  # The retired default, in use or just taking up space.
+  if [ "$SOAPCAP_MODEL" = "$SC_RETIRED_MODEL" ]; then
+    sc_info "  WARN  your default model, llama3.1:8b, is retired — Gemma 4 E4B replaces it"
+    sc_info "        strongly recommended: re-run $SC_ROOT/install.sh, which sets up"
+    sc_info "        Gemma 4 E4B, makes it the default, and removes llama3.1:8b"
+  elif sc_retired_pulled; then
+    sc_info "  WARN  llama3.1:8b is still on this Mac (~5GB), but retired — Gemma 4 E4B"
+    sc_info "        replaces it. Re-run $SC_ROOT/install.sh to swap them (or: ollama rm llama3.1:8b)"
   fi
 
   case "$SOAPCAP_STYLE" in

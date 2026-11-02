@@ -11,8 +11,8 @@ Usage: ./install.sh
 
 Installs yap and jq via Homebrew, puts soapcap on your PATH, runs
 `soapcap doctor`, then offers each optional piece in turn (Desktop
-shortcut, gum, fzf, note drafting via Ollama + llama3.1:8b, the Bonsai
-note model, the de-identify helper). Safe to re-run.
+shortcut, gum, fzf, the note models Gemma 4 E4B and Bonsai, the de-identify
+helper). Replaces the retired llama3.1:8b, if it finds it. Safe to re-run.
 EOF
     exit 0 ;;
   "") ;;
@@ -130,63 +130,167 @@ if [ -t 0 ] && ! command -v fzf >/dev/null 2>&1; then
   esac
 fi
 
-# --- note models: one question, offering only what isn't set up yet --------
+# --- note models -------------------------------------------------------------
+cfg="${SOAPCAP_CONFIG:-$HOME/.config/soapcap/config.sh}"
+# shellcheck source=lib/model.sh
+. "$here/lib/model.sh"   # sc_save_model_config, sc_retired_pulled
+
+# Settings renamed when Bonsai's llama-server became the engine for every
+# tested model; commented-out examples are renamed too.
+if [ -f "$cfg" ] && grep -Eq 'SOAPCAP_BONSAI_(DIR|SERVER|PORT)=' "$cfg"; then
+  body=$(sed -E 's/SOAPCAP_BONSAI_DIR=/SOAPCAP_ENGINE_DIR=/; s/SOAPCAP_BONSAI_SERVER=/SOAPCAP_LLAMA_SERVER=/; s/SOAPCAP_BONSAI_PORT=/SOAPCAP_ENGINE_PORT=/' "$cfg")
+  printf '%s\n' "$body" > "$cfg"   # in place, so a symlinked config.sh stays one
+  echo "==> Renamed SOAPCAP_BONSAI_DIR/_SERVER/_PORT in $cfg to"
+  echo "    SOAPCAP_ENGINE_DIR, SOAPCAP_LLAMA_SERVER and SOAPCAP_ENGINE_PORT"
+fi
+
+# model_ready MODEL — whether soapcap itself would find MODEL set up, with
+# config.sh applied (lib/engine.sh). Both read soapcap's settings in a
+# subshell, so none of them leak into this script.
+model_ready() {
+  # shellcheck source=/dev/null
+  ( set +eu; SC_ROOT="$here"; . "$here/lib/common.sh"; . "$here/lib/engine.sh"; sc_engine_installed "$1" )
+}
+# The engine folder soapcap will look in, config.sh's if it sets one, so the
+# models installer puts everything there.
+# shellcheck source=/dev/null
+engine_dir=$( set +eu; . "$here/lib/common.sh"; printf '%s' "$SOAPCAP_ENGINE_DIR" )
+setup_models() {
+  SOAPCAP_ENGINE_DIR="$engine_dir" "$here/tools/models/install.sh" "$@" \
+    || echo "==> Model setup didn't finish — re-run any time: tools/models/install.sh $*"
+}
+
+# A Bonsai setup from before the engine had its own folder: carried over
+# without asking, since it was asked for once already. Its download moves;
+# the engine is rebuilt.
+old_bonsai="$HOME/.local/share/soapcap/bonsai"
+if [ -f "$old_bonsai/Ternary-Bonsai-2-27B-PTQ1_0.gguf" ] && [ "$old_bonsai" != "$engine_dir" ]; then
+  echo
+  echo "==> Moving Bonsai to soapcap's engine folder (rebuilds llama-server, a few minutes)"
+  setup_models bonsai
+fi
+
+gemma_ready=0; model_ready gemma4-e4b && gemma_ready=1
+bonsai_ready=0; model_ready bonsai && bonsai_ready=1
+cfg_model=$(sed -n 's/^SOAPCAP_MODEL="\(.*\)"$/\1/p' "$cfg" 2>/dev/null | tail -n 1)
+
+# --- the retired llama3.1:8b: replace it with Gemma 4 E4B --------------------
+# remove_retired — `ollama rm llama3.1:8b`, starting Ollama for it if it
+# isn't running, then checks that the model really is gone.
+remove_retired() {
+  local served=""
+  if ! command -v ollama >/dev/null 2>&1; then
+    echo "==> llama3.1:8b is still in Ollama's folder, but the ollama command isn't on PATH"
+    echo "    to remove it. Reinstall Ollama (brew install ollama), then: ollama rm llama3.1:8b"
+    return 0
+  fi
+  if ! ollama list >/dev/null 2>&1; then
+    ollama serve >/dev/null 2>&1 &
+    served=$!
+    local i=0
+    while [ "$i" -lt 30 ] && ! ollama list >/dev/null 2>&1; do sleep 0.5; i=$((i + 1)); done
+  fi
+  echo "==> Removing llama3.1:8b"
+  ollama rm llama3.1:8b || true
+  if sc_retired_pulled || ollama list 2>/dev/null | awk 'NR > 1 { print $1 }' | grep -qx 'llama3.1:8b'; then
+    echo "==> llama3.1:8b is still there — remove it by hand: ollama rm llama3.1:8b"
+  else
+    echo "==> llama3.1:8b is gone (~5GB freed)"
+    if [ -z "$(ollama list 2>/dev/null | awk 'NR > 1')" ]; then
+      echo "    Nothing else is in Ollama, and soapcap no longer needs it. To remove it too:"
+      echo "      brew services stop ollama; brew uninstall ollama"
+    fi
+  fi
+  if [ -n "$served" ]; then
+    kill "$served" 2>/dev/null || true
+    wait "$served" 2>/dev/null || true
+  fi
+}
+
+# The replacement is offered whenever llama3.1:8b is the default or still
+# pulled. Gemma is set up first, and llama3.1:8b removed only once it is, so
+# notes keep working if the download fails. Someone whose default is
+# another model (Bonsai) is only offered the removal.
+kept_retired=0
+llama_in_use=0; [ "$cfg_model" = "$SC_RETIRED_MODEL" ] && llama_in_use=1
+llama_pulled=0; sc_retired_pulled && llama_pulled=1
+if [ "$llama_in_use" -eq 1 ] || [ "$llama_pulled" -eq 1 ]; then
+  need_gemma=0
+  case "$cfg_model" in "$SC_RETIRED_MODEL"|""|gemma4-e4b) [ "$gemma_ready" -eq 0 ] && need_gemma=1 ;; esac
+  echo
+  echo "!! llama3.1:8b is retired. soapcap's notes are now tested with Gemma 4 E4B,"
+  echo "!! which replaces it as the default. Replacing it is strongly recommended."
+  if [ "$need_gemma" -eq 1 ]; then
+    question="Replace llama3.1:8b with Gemma 4 E4B now (a ~5GB download, plus a few minutes to build its engine; then llama3.1:8b is removed)?"
+  elif [ "$llama_in_use" -eq 1 ]; then
+    question="Switch your default to Gemma 4 E4B (already set up) and remove llama3.1:8b?"
+  else
+    question="Remove llama3.1:8b (~5GB) now?"
+  fi
+  ans=""
+  if [ -t 0 ]; then
+    printf '%s [Y/n] ' "$question"
+    read -r ans || true
+  else
+    ans=n
+  fi
+  case "$ans" in
+    n|N|no|No)
+      kept_retired=1
+      echo "==> llama3.1:8b kept for now. Re-run ./install.sh from a terminal any time to replace it." ;;
+    *)
+      if [ "$need_gemma" -eq 1 ]; then
+        setup_models gemma4-e4b
+        model_ready gemma4-e4b && gemma_ready=1
+      fi
+      if [ "$need_gemma" -eq 1 ] && [ "$gemma_ready" -eq 0 ]; then
+        kept_retired=1
+        echo "==> llama3.1:8b left in place so notes keep working; re-run ./install.sh to try again."
+      else
+        if [ "$llama_in_use" -eq 1 ]; then
+          sc_save_model_config gemma4-e4b
+          cfg_model=gemma4-e4b
+          echo "==> Default note model set to gemma4-e4b"
+        fi
+        [ "$llama_pulled" -eq 1 ] && remove_retired
+      fi ;;
+  esac
+fi
+
+# --- one question, offering only what isn't set up yet -------------------------
 # Re-running install.sh must never push a download someone has declined, so
 # an already-installed model is never offered again, and once any model is
-# set up the default answer is to add nothing.
-bonsai_dir="${SOAPCAP_BONSAI_DIR:-$HOME/.local/share/soapcap/bonsai}"
-ollama_ready=0
-[ -f "${OLLAMA_MODELS:-$HOME/.ollama/models}/manifests/registry.ollama.ai/library/llama3.1/8b" ] && ollama_ready=1
-bonsai_ready=0
-[ -x "$bonsai_dir/llama.cpp/build/bin/llama-server" ] \
-  && [ -f "$bonsai_dir/Ternary-Bonsai-2-27B-PTQ1_0.gguf" ] && bonsai_ready=1
+# set up (or llama3.1:8b was just kept) the default answer is to add nothing.
 mem_gb=$(( $(/usr/sbin/sysctl -n hw.memsize 2>/dev/null || echo 0) / 1073741824 ))
-
-setup_llama() {
-  command -v ollama >/dev/null 2>&1 || brew install ollama
-  brew services start ollama >/dev/null 2>&1 || true
-  echo "==> Pulling llama3.1:8b (~5GB)"
-  if ollama pull llama3.1:8b; then
-    ollama_ready=1
-  else
-    echo "==> llama3.1:8b pull failed — retry any time: ollama pull llama3.1:8b"
-  fi
-}
-setup_bonsai() {
-  if "$here/tools/bonsai/install.sh"; then
-    bonsai_ready=1
-  else
-    echo "==> Bonsai setup didn't finish — re-run any time: tools/bonsai/install.sh"
-  fi
-}
-
 offer_bonsai=1
 [ "$mem_gb" -lt 16 ] && offer_bonsai=0
 choices=()
-[ "$ollama_ready" -eq 0 ] && choices+=("llama3.1:8b")
+[ "$gemma_ready" -eq 0 ] && choices+=("gemma4-e4b")
 [ "$bonsai_ready" -eq 0 ] && [ "$offer_bonsai" -eq 1 ] && choices+=("bonsai")
 [ "${#choices[@]}" -eq 2 ] && choices+=("both")
 
 if [ -t 0 ] && [ "${#choices[@]}" -gt 0 ]; then
   default_choice="${choices[0]}"
-  [ "$ollama_ready" -eq 1 ] || [ "$bonsai_ready" -eq 1 ] && default_choice="skip"
+  [ "$gemma_ready" -eq 1 ] || [ "$bonsai_ready" -eq 1 ] || [ "$kept_retired" -eq 1 ] && default_choice="skip"
   choices+=("skip")
 
   echo
   echo "Local note drafting — which model(s)?"
-  [ "$ollama_ready" -eq 1 ] && echo "  (llama3.1:8b is already set up)"
+  [ "$gemma_ready" -eq 1 ] && echo "  (gemma4-e4b is already set up)"
   [ "$bonsai_ready" -eq 1 ] && echo "  (bonsai is already set up)"
   i=1
   for c in "${choices[@]}"; do
     case "$c" in
-      llama3.1:8b) desc="fast, usually under a minute a note — installs Ollama, ~5GB" ;;
-      bonsai)      desc="slower (a few minutes) but more careful — builds PrismML's llama.cpp fork, ~6GB" ;;
-      both)        desc="both of the above (~11GB)" ;;
-      skip)        desc="nothing now — capture and transcription work without a model" ;;
+      gemma4-e4b) desc="the default: fast, under two minutes a note — ~5GB" ;;
+      bonsai)     desc="slower (a few minutes a note) but more careful — ~6GB" ;;
+      both)       desc="both of the above (~11GB)" ;;
+      skip)       desc="nothing now — capture and transcription work without a model" ;;
     esac
     printf '  %d) %-12s %s\n' "$i" "$c" "$desc"
     i=$((i + 1))
   done
+  [ "$gemma_ready" -eq 0 ] && [ "$bonsai_ready" -eq 0 ] \
+    && echo "  (the first model also builds PrismML's llama.cpp fork, a few minutes)"
   printf "Choose [default: %s] " "$default_choice"
   ans=""
   read -r ans || true
@@ -201,25 +305,23 @@ if [ -t 0 ] && [ "${#choices[@]}" -gt 0 ]; then
     [ -n "$pick" ] || { echo "==> Not a choice — skipping note models for now"; pick="skip"; }
   fi
   case "$pick" in
-    llama3.1:8b) setup_llama ;;
-    bonsai)      setup_bonsai ;;
-    both)        setup_llama; setup_bonsai ;;
+    gemma4-e4b) setup_models gemma4-e4b ;;
+    bonsai)     setup_models bonsai ;;
+    both)       setup_models gemma4-e4b bonsai ;;
   esac
+  model_ready gemma4-e4b && gemma_ready=1
+  model_ready bonsai && bonsai_ready=1
 fi
 
 # Point the default at an installed model when the current one isn't.
-cfg="${SOAPCAP_CONFIG:-$HOME/.config/soapcap/config.sh}"
-current=$(sed -n 's/^SOAPCAP_MODEL="\(.*\)"$/\1/p' "$cfg" 2>/dev/null | tail -n 1)
-current="${current:-llama3.1:8b}"
+current="${cfg_model:-gemma4-e4b}"
 new_default=""
-if [ "$current" = "llama3.1:8b" ] && [ "$ollama_ready" -eq 0 ] && [ "$bonsai_ready" -eq 1 ]; then
+if [ "$current" = gemma4-e4b ] && [ "$gemma_ready" -eq 0 ] && [ "$bonsai_ready" -eq 1 ]; then
   new_default="bonsai"
-elif [ "$current" = "bonsai" ] && [ "$bonsai_ready" -eq 0 ] && [ "$ollama_ready" -eq 1 ]; then
-  new_default="llama3.1:8b"
+elif [ "$current" = bonsai ] && [ "$bonsai_ready" -eq 0 ] && [ "$gemma_ready" -eq 1 ]; then
+  new_default="gemma4-e4b"
 fi
 if [ -n "$new_default" ]; then
-  # shellcheck source=lib/model.sh
-  . "$here/lib/model.sh"
   sc_save_model_config "$new_default"
   echo "==> Default note model set to $new_default (the one that's installed)"
 fi
@@ -248,9 +350,9 @@ fi
 next_msg="
 Next:
   soapcap session                                     # guided: capture, then ask about a note"
-if [ "$ollama_ready" -eq 1 ] || [ "$bonsai_ready" -eq 1 ]; then
+if [ "$gemma_ready" -eq 1 ] || [ "$bonsai_ready" -eq 1 ]; then
   next_msg="$next_msg
-  soapcap model                                       # pick the note model (llama3.1:8b or bonsai)"
+  soapcap model                                       # pick the note model (gemma4-e4b or bonsai)"
 fi
 if [ "$deidentify_ready" -eq 1 ]; then
   next_msg="$next_msg
@@ -258,12 +360,12 @@ if [ "$deidentify_ready" -eq 1 ]; then
 fi
 next_msg="$next_msg
   cp config.example.sh ~/.config/soapcap/config.sh    # optional config"
-if [ "$ollama_ready" -ne 1 ] && [ "$bonsai_ready" -ne 1 ]; then
+if [ "$gemma_ready" -ne 1 ] && [ "$bonsai_ready" -ne 1 ]; then
   next_msg="$next_msg
 
 To draft notes locally later, re-run ./install.sh and pick a model, or:
-  brew install ollama && brew services start ollama && ollama pull llama3.1:8b
-  tools/bonsai/install.sh       # the slower, more careful alternative"
+  tools/models/install.sh gemma4-e4b   # the default (~5GB)
+  tools/models/install.sh bonsai       # the slower, more careful alternative (~6GB)"
 fi
 if [ "$deidentify_ready" -ne 1 ]; then
   next_msg="$next_msg
@@ -274,6 +376,6 @@ fi
 next_msg="$next_msg
 
 Optional extras (each README lists requirements and steps):
-  tools/bonsai/install.sh    Bonsai note model (slower, more careful; ~6GB)
+  tools/models/install.sh bonsai   Bonsai note model (slower, more careful; ~6GB)
   tools/deidentify/install.sh   local PII redaction (~700MB)"
 printf '%s\n' "$next_msg"

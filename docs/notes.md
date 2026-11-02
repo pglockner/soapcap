@@ -68,60 +68,74 @@ apps is the fix. In `session`, each finished pass keeps its line, ending
 `-- done!`, so you can see what the note cost; `note` clears it. The model
 is unloaded as soon as the note is done; `session` keeps it loaded until
 you've settled on a draft, so that regenerating doesn't wait for it to load
-again. Models are asked not to "think" (Ollama's `think: false`, Bonsai's
-`enable_thinking: false`): reasoning made notes worse or much slower in
+again. Models are asked not to "think" (`enable_thinking: false`, or
+Ollama's `think: false`): reasoning made notes worse or much slower in
 testing.
 
 ## Models
 
-The two soapcap's prompts are tested with:
+The two soapcap's prompts are tested with, both run on soapcap's own
+engine:
 
 | Model | Size | Notes |
 |---|---|---|
-| `llama3.1:8b` | ~5GB | **Default.** Fast: 1–2 minutes a SOAP note. Often assigns a pronoun from the client's name and gets details wrong. Proofread pronouns and facts. |
+| `gemma4-e4b` | ~5GB | **Default.** Gemma 4 E4B Instruct, in unsloth's 4-bit conversion. Fast: under two minutes for a long session, and needs the least memory (~6.5GB). Now and then gives a client whose pronoun was never stated one from their name; proofread pronouns, or de-identify the transcript first, which removes the cue. |
 | `bonsai` | ~6GB (16GB+ Mac) | Bonsai 2 27B, a ternary-weight model from PrismML. Slower (4–8 minutes a SOAP note), and it uses most of a 16GB Mac's memory while it runs. More accurate, and keeps pronouns neutral. Still proofread it. |
 
 **`soapcap model`** shows both with their live status, plus any other
 model you've already pulled into Ollama (marked untested), and lets you pick
-one as the default for `session`/`note` (pulling `llama3.1:8b` via Ollama
-if needed). `--model` still overrides it per run. The authoritative list
-is [`sc_model_catalog`](../lib/model.sh).
+one as the default for `session`/`note` (setting it up first if needed).
+`--model` still overrides it per run. The authoritative list is
+[`sc_model_catalog`](../lib/model.sh).
 
-### Setting up Bonsai
+### Setting up the models
 
-Bonsai's weights use a format only
-[PrismML's llama.cpp fork](https://github.com/PrismML-Eng/llama.cpp) can
-load — not Ollama, not stock llama.cpp. `install.sh` offers it, or run it
-any time:
+Both run on `llama-server` from
+[PrismML's llama.cpp fork](https://github.com/PrismML-Eng/llama.cpp), at
+the commit soapcap was tested with: the only runtime that loads Bonsai's
+weights, and the one Gemma's notes were tested on. `install.sh` offers
+them, or run it any time:
 
 ```sh
-tools/bonsai/install.sh    # builds the fork's llama-server (pinned, ~2 min),
-                           # downloads the model (~6GB, checksum-verified)
-                           # into ~/.local/share/soapcap/bonsai
+tools/models/install.sh gemma4-e4b   # builds the fork's llama-server the
+                                     # first time (pinned, ~2 min), downloads
+                                     # the model (~5GB, checksum-verified)
+                                     # into ~/.local/share/soapcap/engine
+tools/models/install.sh bonsai       # ~6GB more, same server
 soapcap note --model bonsai transcript.txt
 ```
 
-soapcap starts Bonsai's server on `127.0.0.1` only when drafting a note and
+soapcap starts the server on `127.0.0.1` only when drafting a note and
 stops it straight after, so its memory is free the rest of the time. Its
-location and port are configurable — see `config.example.sh`.
+location and port are configurable — see `config.example.sh`. Gemma's
+server takes a checkpoint at every request (`--checkpoint-min-step 0`):
+its attention looks back over a sliding window, so without one the
+Objective pass would read the whole transcript again.
 
-### Bonsai only
+### The retired llama3.1:8b
 
-Bonsai doesn't use Ollama, so once it's your default you
-can reclaim llama3.1:8b's space — `note`, `session` and `doctor` are fine
-without it, and re-running `install.sh` won't offer it by default:
+`llama3.1:8b`, via Ollama, was the default until Gemma 4 E4B replaced it.
+While it's still your default, or still pulled while Gemma isn't set up,
+`note`, `session`, `soapcap model` and `doctor` warn about it. Re-running
+`install.sh` replaces it: it sets up Gemma 4 E4B, switches a
+`SOAPCAP_MODEL="llama3.1:8b"` in `config.sh` to it, then runs
+`ollama rm llama3.1:8b` (starting Ollama for it if needed) and checks that
+it's gone. llama3.1:8b is only removed once Gemma is set up, so notes keep
+working if the download fails. Until then, `--model llama3.1:8b` still
+drafts, as an untested model. By hand:
 
 ```sh
-soapcap model                 # pick bonsai
+tools/models/install.sh gemma4-e4b
+soapcap model                 # pick gemma4-e4b
 ollama rm llama3.1:8b         # frees ~5GB
 brew uninstall ollama         # optional, if nothing else uses it
 ```
 
 ### Other models
 
-Any other Ollama model works too, but outside the two
-above soapcap flags it as untested each time, and its notes need closer
-proofreading. Pull it, then name it:
+Any Ollama model works too, but outside the two above soapcap flags it as
+untested each time, and its notes need closer proofreading. Pull it, then
+name it:
 
 ```sh
 ollama pull qwen2.5:14b
@@ -129,9 +143,9 @@ soapcap note --model qwen2.5:14b transcript.txt
 ```
 
 To make it stick, set `SOAPCAP_MODEL="qwen2.5:14b"` in
-`~/.config/soapcap/config.sh`. `qwen2.5:14b` (~9GB, about as fast as the
-default) is a reasonable middle ground, but in SOAP notes it often assigns
-pronouns from names and adds detail the transcript doesn't support.
+`~/.config/soapcap/config.sh`. `qwen2.5:14b` (~9GB) is a reasonable middle
+ground, but in SOAP notes it often assigns pronouns from names and adds
+detail the transcript doesn't support.
 
 ## Note style
 
@@ -143,9 +157,6 @@ experimental.
 | `narrative` | **Default.** The model writes the note as prose from `prompts/<format>.md`. | Fullest Subjective and the most natural wording. Format rules depend on the model following the prompt. |
 | `structured` | The model fills in a fixed set of fields — each Objective observation (DAP/BIRP) and next step cites the transcript line it comes from — and soapcap checks them and writes the note itself. SOAP's Objective still comes from its own pass. | Headers, the Objective rule and "Not addressed" are guaranteed by code rather than the model. Plan lists every commitment, and a disclosed risk's safety plan (warning signs, coping strategies, supports, emergency steps) in full. Cited lines, who-said-what, and quotes are checked against the transcript. But Subjective comes out briefer than narrative's, and Plan reads as composed sentences rather than free prose. |
 | `combined` | A narrative note, plus a structured pass used only to check it. | The narrative note, unchanged, plus a review: quotes that aren't in the transcript, a safety risk or safety screen the note doesn't mention, and a checklist of the next steps mentioned in the session. **One more model pass** than narrative, so SOAP takes three. |
-
-With `llama3.1:8b`, structured DAP/BIRP notes can copy transcript lines
-word for word; use `narrative` with that model.
 
 Reviews print to the terminal only (stderr) — never into the note, `--out`,
 or the clipboard.

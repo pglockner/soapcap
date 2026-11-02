@@ -3,7 +3,8 @@
 # context sizing, and the drafting status line.
 
 # ---- backends ---------------------------------------------------------------
-# A note model is reached through one of two backends: `bonsai` (lib/bonsai.sh)
+# A note model is reached through one of two backends: the engine, soapcap's
+# own llama-server, for the models it runs (lib/engine.sh, sc_engine_model),
 # or Ollama, for every other tag (lib/ollama.sh). Each provides the same six
 # functions, sc_<backend>_{label,check,start,request,stop,resumes_opening},
 # and the sc_model_* functions below are the only place that tells the two
@@ -11,10 +12,7 @@
 
 # sc_backend MODEL — prints the name of the backend that serves MODEL.
 sc_backend() {
-  case "$1" in
-    bonsai) echo bonsai ;;
-    *)      echo ollama ;;
-  esac
+  if sc_engine_model "$1" >/dev/null; then echo engine; else echo ollama; fi
 }
 
 # sc_model_label MODEL — MODEL's name as shown on the status line.
@@ -52,7 +50,7 @@ sc_model_start() {
 sc_model_request() { "sc_$(sc_backend "$1")_request" "$@"; }
 
 # sc_model_stop — frees the memory of whatever sc_model_start started: stops
-# Bonsai's server, or has Ollama unload its model. Does nothing when no
+# the engine's server, or has Ollama unload its model. Does nothing when no
 # model is active, so it is safe to call from the EXIT trap (sc_cleanup).
 sc_model_stop() {
   [ -n "${SC_ACTIVE_MODEL:-}" ] || return 0
@@ -220,7 +218,7 @@ sc_spin_post() {
   # Backgrounded + `wait` because bash holds a signal until a foreground
   # command finishes — minutes, here — so a SIGTERM (how a GUI front
   # end stops soapcap) would otherwise go unanswered, and a second one kills
-  # bash without its EXIT trap, orphaning Bonsai's server.
+  # bash without its EXIT trap, orphaning the engine's server.
   curl -s --max-time "$max" -X POST "$url" \
     -H 'Content-Type: application/json' -d "@$body" -o "$out" &
   local cpid=$!

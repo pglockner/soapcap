@@ -2,24 +2,63 @@
 # soapcap model — the tested-model catalog and the default-model chooser.
 
 # sc_model_catalog — one "tag|size|note" line per model soapcap has been
-# tested with (the baselines behind README "Draft a note"). Any other
-# Ollama tag still works via --model or SOAPCAP_MODEL, with a warning.
+# tested with (the baselines behind README "Draft a note"), the default
+# first. Both run on soapcap's own engine (lib/engine.sh). Any Ollama tag
+# still works via --model or SOAPCAP_MODEL, with a warning.
 sc_model_catalog() {
   cat <<'EOF'
-llama3.1:8b|~5GB|Default. Fast (usually under a minute). Often assumes a client's pronoun from their name; proofread pronouns and the Objective section.
-bonsai|~6GB (16GB+ Mac)|More careful: best at pronouns and at not inventing in-session reactions. Slower (a few minutes a note). Set up with tools/bonsai/install.sh.
+gemma4-e4b|~5GB|Default. Fast: under two minutes for a long session, and needs the least memory (~6.5GB). Now and then gives a client a pronoun from their name; proofread pronouns.
+bonsai|~6GB (16GB+ Mac)|More careful: best at pronouns and at not inventing in-session reactions. Slower (a few minutes a note).
 EOF
+}
+
+# The default before gemma4-e4b. Retired: soapcap's prompts are now tested
+# with Gemma 4 E4B instead, and install.sh replaces it.
+SC_RETIRED_MODEL="llama3.1:8b"
+
+# sc_retired_pulled — true while llama3.1:8b is still in Ollama's model
+# store. Reads the store on disk, so it answers with Ollama stopped;
+# install.sh checks the same file.
+sc_retired_pulled() {
+  [ -f "${OLLAMA_MODELS:-$HOME/.ollama/models}/manifests/registry.ollama.ai/library/llama3.1/8b" ]
+}
+
+# sc_retired_notice MODEL — once a run, strongly suggests replacing
+# llama3.1:8b when a note would use it: MODEL is llama3.1:8b, or MODEL is
+# gemma4-e4b, not set up yet, on a Mac that still has llama3.1:8b (someone
+# who updated soapcap without re-running install.sh). Silent otherwise.
+sc_retired_notice() {
+  [ -z "${SC_RETIRED_WARNED:-}" ] || return 0
+  case "$1" in
+    "$SC_RETIRED_MODEL"|llama3.1)
+      sc_info "WARNING: llama3.1:8b is retired. soapcap's notes are now tested with Gemma 4 E4B,"
+      sc_info "  which replaces it as the default." ;;
+    gemma4-e4b)
+      sc_engine_installed gemma4-e4b && return 0
+      sc_retired_pulled || return 0
+      sc_info "WARNING: soapcap's default note model is now Gemma 4 E4B, which replaces"
+      sc_info "  llama3.1:8b. llama3.1:8b is retired." ;;
+    *) return 0 ;;
+  esac
+  sc_info "  Strongly recommended: run $SC_ROOT/install.sh"
+  sc_info "  It sets up Gemma 4 E4B, makes it your default, and removes llama3.1:8b (~5GB)."
+  [ "$1" = gemma4-e4b ] && sc_info "  Until then, --model llama3.1:8b still drafts, untested."
+  SC_RETIRED_WARNED=1
 }
 
 # sc_installed_models HOST DEFAULT — prints the tags that are ready to use
 # right now, one per line, DEFAULT first (so bare Enter keeps it): DEFAULT
-# itself, Bonsai if it's set up, then every model pulled into Ollama
-# (tested or not).
+# itself, each tested model that's set up, then every model pulled into
+# Ollama (tested or not).
 sc_installed_models() {
   local host="$1" default="$2" tag
   {
     printf '%s\n' "$default"
-    sc_bonsai_installed && printf 'bonsai\n'
+    while IFS='|' read -r tag _; do
+      sc_engine_installed "$tag" && printf '%s\n' "$tag"
+    done <<CATALOG
+$(sc_model_catalog)
+CATALOG
     sc_ollama_models "$host"
   } | awk 'NF && !seen[$0]++'
 }
@@ -29,29 +68,23 @@ sc_installed_models() {
 # stdout for the caller to route through sc_info.
 sc_model_table() {
   local host="$1" tag size note status
-  local pulled
-  pulled=$(sc_ollama_models "$host")
   {
     while IFS='|' read -r tag size note; do
       [ -z "$tag" ] && continue
-      if [ "$tag" = bonsai ]; then
-        status="not set up"
-        sc_bonsai_installed && status="installed"
-      else
-        status="not pulled"
-        printf '%s\n' "$pulled" | grep -qx "$tag" && status="pulled"
-      fi
+      status="not set up"
+      sc_engine_installed "$tag" && status="installed"
       printf '%s\t%s\t%s\t%s\n' "$tag" "$size" "$status" "$note"
     done <<CATALOG
 $(sc_model_catalog)
 CATALOG
-    # Anything else pulled into Ollama: usable, just untested.
-    local gb
+    # Anything pulled into Ollama: usable, just untested -- except the
+    # retired default, which install.sh replaces.
+    local gb note
     while IFS=$'\t' read -r tag gb; do
       [ -z "$tag" ] && continue
-      sc_model_catalog | cut -d'|' -f1 | grep -qx "$tag" && continue
-      printf '%s\t~%sGB\tpulled\tUntested with soapcap'"'"'s prompts — proofread its notes closely.\n' \
-        "$tag" "$(awk -v b="$gb" 'BEGIN { printf "%.0f", b / 1e9 }')"
+      note="Untested with soapcap's prompts — proofread its notes closely."
+      [ "$tag" = "$SC_RETIRED_MODEL" ] && note="Retired, replaced by gemma4-e4b. Re-run install.sh to replace it and free the space."
+      printf '%s\t~%sGB\tpulled\t%s\n' "$tag" "$(awk -v b="$gb" 'BEGIN { printf "%.0f", b / 1e9 }')" "$note"
     done <<EXTRAS
 $(curl -s --max-time 3 "$host/api/tags" 2>/dev/null | jq -r '.models[]? | "\(.name)\t\(.size)"' 2>/dev/null)
 EXTRAS
@@ -98,9 +131,10 @@ sc_save_model_config() {
 # soapcap model [--host URL]
 #
 # Shows the tested models as a table (with live status) and, with a real
-# terminal, offers to pick one — pulling an Ollama model if needed — and
-# saves the pick as the new default for session/note (still overridable
-# per-run with --model). Read-only when not interactive.
+# terminal, offers to pick one — setting up a tested model or pulling an
+# Ollama one if needed — and saves the pick as the new default for
+# session/note (still overridable per-run with --model). Read-only when not
+# interactive.
 sc_cmd_model() {
   local host="$SOAPCAP_OLLAMA_HOST"
   while [ $# -gt 0 ]; do
@@ -116,6 +150,7 @@ sc_cmd_model() {
   if ! sc_model_catalog | cut -d'|' -f1 | grep -qx "$SOAPCAP_MODEL"; then
     sc_info "  (a custom model — untested with soapcap's prompts)"
   fi
+  sc_retired_notice "$SOAPCAP_MODEL"
   sc_info ""
   while IFS= read -r line; do sc_info "$line"; done <<TABLE
 $(sc_model_table "$host")
@@ -153,11 +188,12 @@ PULLED
     return 0
   fi
 
-  if [ "$chosen" = bonsai ]; then
-    if ! sc_bonsai_installed; then
-      sc_err "Bonsai isn't set up yet — run: $SC_ROOT/tools/bonsai/install.sh"
-      sc_info "Default unchanged ($SOAPCAP_MODEL)."
-      return 1
+  if sc_engine_model "$chosen" >/dev/null; then
+    if ! sc_engine_installed "$chosen"; then
+      sc_confirm "$(sc_engine_label "$chosen") isn't set up yet — set it up now?" \
+        || { sc_info "Not set up — default unchanged ($SOAPCAP_MODEL)."; return 1; }
+      "$SC_ROOT/tools/models/install.sh" "$chosen" \
+        || { sc_err "setup didn't finish — default unchanged ($SOAPCAP_MODEL)"; return 1; }
     fi
   else
     local pulled

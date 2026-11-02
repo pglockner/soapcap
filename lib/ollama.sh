@@ -1,6 +1,7 @@
 # shellcheck shell=bash
-# The Ollama note backend: every model tag except `bonsai`. One of the two
-# backends behind sc_model_* (lib/generate.sh), which calls the
+# The Ollama note backend: every model tag the engine doesn't run
+# (sc_engine_model), all of them untested. One of the two backends behind
+# sc_model_* (lib/generate.sh), which calls the
 # sc_ollama_{label,check,start,request,stop} functions here.
 
 # sc_ollama_models HOST — prints the tags pulled into the Ollama at HOST, one
@@ -69,7 +70,7 @@ sc_ollama_start() {
 # without one, a model that starts repeating itself runs until the request
 # times out. With SCHEMA (a JSON schema) the reply is JSON matching it, under
 # the structured style's sampling settings; without, prose under the
-# narrative ones, the same as Bonsai's (sc_bonsai_request): llama3.1:8b
+# narrative ones, the same as the engine's (sc_engine_request): llama3.1:8b
 # wrote "Not addressed in this session" under a section the transcript
 # covers less often with them than with Ollama's defaults (2 of 40 sample
 # drafts against 6 of 40). Talks to Ollama's HTTP API directly rather than

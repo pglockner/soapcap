@@ -94,10 +94,12 @@ TITLE
 
 # sc_session_preflight MODEL HOST — checked before the recording starts, not
 # after an hour-long session: can MODEL draft a note? Says nothing when it
-# can. When it can't, says what to fix and asks whether to record anyway (the
-# transcript is still captured, and the note can be retried afterwards);
-# fails only on a "no".
+# can, unless MODEL is (or stands in for) the retired llama3.1:8b. When it
+# can't, says what to fix and asks whether to record anyway (the transcript
+# is still captured, and the note can be retried afterwards); fails only on
+# a "no".
 sc_session_preflight() {
+  sc_retired_notice "$1"
   sc_model_check "$1" "$2" && return 0
   sc_info "Recording still works; a note can be drafted once that's fixed."
   [ -t 0 ] || return 0
