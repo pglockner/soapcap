@@ -9,6 +9,10 @@
 #   tools/models/install.sh gemma4-e4b          the default model
 #   tools/models/install.sh bonsai              the slower, more careful one
 #   tools/models/install.sh gemma4-e4b bonsai   both
+#
+# SOAPCAP_MODELS_NO_HINTS=1 leaves out the "use it / make it the default"
+# lines after each model, for a caller that says what's next itself
+# (install.sh, `soapcap model`).
 set -eu
 
 FORK_URL="https://github.com/PrismML-Eng/llama.cpp.git"
@@ -145,8 +149,10 @@ for model in "$@"; do
   fi
   echo
   echo "$LABEL is ready."
-  printf '  %-34s # use it for one note\n' "soapcap note --model $model FILE"
-  printf '  %-34s # or make it the default\n' "soapcap model"
+  if [ -z "${SOAPCAP_MODELS_NO_HINTS:-}" ]; then
+    printf '  %-34s # use it for one note\n' "soapcap note --model $model FILE"
+    printf '  %-34s # or make it the default\n' "soapcap model"
+  fi
 done
 if [ "$dir" != "$HOME/.local/share/soapcap/engine" ]; then
   echo "  (installed to a custom location — keep SOAPCAP_ENGINE_DIR=\"$dir\" in ~/.config/soapcap/config.sh)"

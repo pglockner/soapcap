@@ -84,7 +84,7 @@ sc_cmd_doctor() {
       fi
     elif [ "$tag" = "$SOAPCAP_MODEL" ]; then
       sc_info "  WARN  your default model, $label, isn't set up"
-      sc_info "        set up with: $SC_ROOT/tools/models/install.sh $tag   (or re-run install.sh)"
+      sc_info "        set up with: $SC_ROOT/tools/models/install.sh $tag   (install.sh offers it too)"
     else
       sc_info "  --    $label not set up — optional note model"
       sc_info "        set up with: $SC_ROOT/tools/models/install.sh $tag"
@@ -112,11 +112,11 @@ CATALOG
   # The retired default, in use or just taking up space.
   if [ "$SOAPCAP_MODEL" = "$SC_RETIRED_MODEL" ]; then
     sc_info "  WARN  your default model, llama3.1:8b, is retired — Gemma 4 E4B replaces it"
-    sc_info "        strongly recommended: re-run $SC_ROOT/install.sh, which sets up"
-    sc_info "        Gemma 4 E4B, makes it the default, and removes llama3.1:8b"
+    sc_info "        replace it with: $SC_ROOT/install.sh (strongly recommended),"
+    sc_info "        which sets up Gemma 4 E4B, makes it the default, and removes llama3.1:8b"
   elif sc_retired_pulled; then
     sc_info "  WARN  llama3.1:8b is still on this Mac (~5GB), but retired — Gemma 4 E4B"
-    sc_info "        replaces it. Re-run $SC_ROOT/install.sh to swap them (or: ollama rm llama3.1:8b)"
+    sc_info "        replaces it. Swap them with: $SC_ROOT/install.sh   (or just: ollama rm llama3.1:8b)"
   fi
 
   case "$SOAPCAP_STYLE" in
@@ -143,7 +143,7 @@ CATALOG
   else
     sc_info "  --    de-identify helper not set up — only needed for 'soapcap deidentify'"
     sc_info "        (and the optional note de-identify offer in 'soapcap session')"
-    sc_info "        set up with: tools/deidentify/install.sh (or re-run install.sh)"
+    sc_info "        set up with: tools/deidentify/install.sh   (install.sh offers it too)"
   fi
 
   sc_info ""

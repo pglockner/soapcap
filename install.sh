@@ -54,6 +54,52 @@ else
   ln -sf "$here/bin/soapcap" "$link"
 fi
 
+# --- note models: settings and folder moves ----------------------------------
+# Before doctor, so it reports the models where they now are.
+cfg="${SOAPCAP_CONFIG:-$HOME/.config/soapcap/config.sh}"
+# shellcheck source=lib/model.sh
+. "$here/lib/model.sh"   # sc_save_model_config, sc_retired_pulled
+
+# Settings renamed when Bonsai's llama-server became the engine for every
+# tested model; commented-out examples are renamed too.
+if [ -f "$cfg" ] && grep -Eq 'SOAPCAP_BONSAI_(DIR|SERVER|PORT)=' "$cfg"; then
+  body=$(sed -E 's/SOAPCAP_BONSAI_DIR=/SOAPCAP_ENGINE_DIR=/; s/SOAPCAP_BONSAI_SERVER=/SOAPCAP_LLAMA_SERVER=/; s/SOAPCAP_BONSAI_PORT=/SOAPCAP_ENGINE_PORT=/' "$cfg")
+  printf '%s\n' "$body" > "$cfg"   # in place, so a symlinked config.sh stays one
+  echo "==> Renamed SOAPCAP_BONSAI_DIR/_SERVER/_PORT in $cfg to"
+  echo "    SOAPCAP_ENGINE_DIR, SOAPCAP_LLAMA_SERVER and SOAPCAP_ENGINE_PORT"
+fi
+
+# model_ready MODEL — whether soapcap itself would find MODEL set up, with
+# config.sh applied (lib/engine.sh). Both read soapcap's settings in a
+# subshell, so none of them leak into this script.
+model_ready() {
+  # shellcheck source=/dev/null
+  ( set +eu; SC_ROOT="$here"; . "$here/lib/common.sh"; . "$here/lib/engine.sh"; sc_engine_installed "$1" )
+}
+# The engine folder soapcap will look in, config.sh's if it sets one, so the
+# models installer puts everything there.
+# shellcheck source=/dev/null
+engine_dir=$( set +eu; . "$here/lib/common.sh"; printf '%s' "$SOAPCAP_ENGINE_DIR" )
+# setup_models MODEL... — tools/models/install.sh into that folder. Its "use
+# it / make it the default" hints are left out: this script says what's next.
+setup_models() {
+  SOAPCAP_ENGINE_DIR="$engine_dir" SOAPCAP_MODELS_NO_HINTS=1 "$here/tools/models/install.sh" "$@" \
+    || echo "==> Model setup didn't finish — re-run any time: tools/models/install.sh $*"
+}
+# engine_built — whether tools/models/install.sh would skip building
+# llama-server, so a question can leave its few minutes out.
+engine_built() { [ -x "$engine_dir/llama.cpp/build/bin/llama-server" ]; }
+
+# A Bonsai setup from before the engine had its own folder: carried over
+# without asking, since it was asked for once already. Its download moves;
+# the engine is rebuilt.
+old_bonsai="$HOME/.local/share/soapcap/bonsai"
+if [ -f "$old_bonsai/Ternary-Bonsai-2-27B-PTQ1_0.gguf" ] && [ "$old_bonsai" != "$engine_dir" ]; then
+  echo
+  echo "==> Moving Bonsai to soapcap's engine folder (rebuilds llama-server, a few minutes)"
+  setup_models bonsai
+fi
+
 echo
 echo "==> Running: soapcap doctor"
 echo "    (grant Microphone AND Screen Recording to your terminal in"
@@ -130,46 +176,7 @@ if [ -t 0 ] && ! command -v fzf >/dev/null 2>&1; then
   esac
 fi
 
-# --- note models -------------------------------------------------------------
-cfg="${SOAPCAP_CONFIG:-$HOME/.config/soapcap/config.sh}"
-# shellcheck source=lib/model.sh
-. "$here/lib/model.sh"   # sc_save_model_config, sc_retired_pulled
-
-# Settings renamed when Bonsai's llama-server became the engine for every
-# tested model; commented-out examples are renamed too.
-if [ -f "$cfg" ] && grep -Eq 'SOAPCAP_BONSAI_(DIR|SERVER|PORT)=' "$cfg"; then
-  body=$(sed -E 's/SOAPCAP_BONSAI_DIR=/SOAPCAP_ENGINE_DIR=/; s/SOAPCAP_BONSAI_SERVER=/SOAPCAP_LLAMA_SERVER=/; s/SOAPCAP_BONSAI_PORT=/SOAPCAP_ENGINE_PORT=/' "$cfg")
-  printf '%s\n' "$body" > "$cfg"   # in place, so a symlinked config.sh stays one
-  echo "==> Renamed SOAPCAP_BONSAI_DIR/_SERVER/_PORT in $cfg to"
-  echo "    SOAPCAP_ENGINE_DIR, SOAPCAP_LLAMA_SERVER and SOAPCAP_ENGINE_PORT"
-fi
-
-# model_ready MODEL — whether soapcap itself would find MODEL set up, with
-# config.sh applied (lib/engine.sh). Both read soapcap's settings in a
-# subshell, so none of them leak into this script.
-model_ready() {
-  # shellcheck source=/dev/null
-  ( set +eu; SC_ROOT="$here"; . "$here/lib/common.sh"; . "$here/lib/engine.sh"; sc_engine_installed "$1" )
-}
-# The engine folder soapcap will look in, config.sh's if it sets one, so the
-# models installer puts everything there.
-# shellcheck source=/dev/null
-engine_dir=$( set +eu; . "$here/lib/common.sh"; printf '%s' "$SOAPCAP_ENGINE_DIR" )
-setup_models() {
-  SOAPCAP_ENGINE_DIR="$engine_dir" "$here/tools/models/install.sh" "$@" \
-    || echo "==> Model setup didn't finish — re-run any time: tools/models/install.sh $*"
-}
-
-# A Bonsai setup from before the engine had its own folder: carried over
-# without asking, since it was asked for once already. Its download moves;
-# the engine is rebuilt.
-old_bonsai="$HOME/.local/share/soapcap/bonsai"
-if [ -f "$old_bonsai/Ternary-Bonsai-2-27B-PTQ1_0.gguf" ] && [ "$old_bonsai" != "$engine_dir" ]; then
-  echo
-  echo "==> Moving Bonsai to soapcap's engine folder (rebuilds llama-server, a few minutes)"
-  setup_models bonsai
-fi
-
+# --- note models: what's set up ----------------------------------------------
 gemma_ready=0; model_ready gemma4-e4b && gemma_ready=1
 bonsai_ready=0; model_ready bonsai && bonsai_ready=1
 cfg_model=$(sed -n 's/^SOAPCAP_MODEL="\(.*\)"$/\1/p' "$cfg" 2>/dev/null | tail -n 1)
@@ -221,7 +228,9 @@ if [ "$llama_in_use" -eq 1 ] || [ "$llama_pulled" -eq 1 ]; then
   echo "!! llama3.1:8b is retired. soapcap's notes are now tested with Gemma 4 E4B,"
   echo "!! which replaces it as the default. Replacing it is strongly recommended."
   if [ "$need_gemma" -eq 1 ]; then
-    question="Replace llama3.1:8b with Gemma 4 E4B now (a ~5GB download, plus a few minutes to build its engine; then llama3.1:8b is removed)?"
+    build_note=", plus a few minutes to build its engine"
+    engine_built && build_note=""
+    question="Replace llama3.1:8b with Gemma 4 E4B now (a ~5GB download$build_note; then llama3.1:8b is removed)?"
   elif [ "$llama_in_use" -eq 1 ]; then
     question="Switch your default to Gemma 4 E4B (already set up) and remove llama3.1:8b?"
   else
@@ -289,8 +298,7 @@ if [ -t 0 ] && [ "${#choices[@]}" -gt 0 ]; then
     printf '  %d) %-12s %s\n' "$i" "$c" "$desc"
     i=$((i + 1))
   done
-  [ "$gemma_ready" -eq 0 ] && [ "$bonsai_ready" -eq 0 ] \
-    && echo "  (the first model also builds PrismML's llama.cpp fork, a few minutes)"
+  engine_built || echo "  (the first model also builds PrismML's llama.cpp fork, a few minutes)"
   printf "Choose [default: %s] " "$default_choice"
   ans=""
   read -r ans || true
@@ -360,22 +368,18 @@ if [ "$deidentify_ready" -eq 1 ]; then
 fi
 next_msg="$next_msg
   cp config.example.sh ~/.config/soapcap/config.sh    # optional config"
-if [ "$gemma_ready" -ne 1 ] && [ "$bonsai_ready" -ne 1 ]; then
+
+# Optional extras: only the ones not set up yet.
+extras=""
+[ "$gemma_ready" -ne 1 ] && extras="$extras
+  tools/models/install.sh gemma4-e4b   Gemma 4 E4B, the default note model (~5GB)"
+[ "$bonsai_ready" -ne 1 ] && extras="$extras
+  tools/models/install.sh bonsai       Bonsai note model (slower, more careful; ~6GB)"
+[ "$deidentify_ready" -ne 1 ] && extras="$extras
+  tools/deidentify/install.sh          local PII redaction (~700MB)"
+if [ -n "$extras" ]; then
   next_msg="$next_msg
 
-To draft notes locally later, re-run ./install.sh and pick a model, or:
-  tools/models/install.sh gemma4-e4b   # the default (~5GB)
-  tools/models/install.sh bonsai       # the slower, more careful alternative (~6GB)"
+Optional extras, not set up yet (re-run ./install.sh to be offered them, or run):$extras"
 fi
-if [ "$deidentify_ready" -ne 1 ]; then
-  next_msg="$next_msg
-
-To set up (optional) local de-identification later:
-  tools/deidentify/install.sh"
-fi
-next_msg="$next_msg
-
-Optional extras (each README lists requirements and steps):
-  tools/models/install.sh bonsai   Bonsai note model (slower, more careful; ~6GB)
-  tools/deidentify/install.sh   local PII redaction (~700MB)"
 printf '%s\n' "$next_msg"

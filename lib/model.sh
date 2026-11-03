@@ -192,7 +192,7 @@ PULLED
     if ! sc_engine_installed "$chosen"; then
       sc_confirm "$(sc_engine_label "$chosen") isn't set up yet — set it up now?" \
         || { sc_info "Not set up — default unchanged ($SOAPCAP_MODEL)."; return 1; }
-      "$SC_ROOT/tools/models/install.sh" "$chosen" \
+      SOAPCAP_MODELS_NO_HINTS=1 "$SC_ROOT/tools/models/install.sh" "$chosen" \
         || { sc_err "setup didn't finish — default unchanged ($SOAPCAP_MODEL)"; return 1; }
     fi
   else
