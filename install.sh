@@ -373,7 +373,7 @@ next_msg="$next_msg
 extras=""
 [ "$gemma_ready" -ne 1 ] && extras="$extras
   tools/models/install.sh gemma4-e4b   Gemma 4 E4B, the default note model (~5GB)"
-[ "$bonsai_ready" -ne 1 ] && extras="$extras
+[ "$bonsai_ready" -ne 1 ] && [ "$offer_bonsai" -eq 1 ] && extras="$extras
   tools/models/install.sh bonsai       Bonsai note model (slower, more careful; ~6GB)"
 [ "$deidentify_ready" -ne 1 ] && extras="$extras
   tools/deidentify/install.sh          local PII redaction (~700MB)"
