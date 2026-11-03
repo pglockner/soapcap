@@ -16,8 +16,16 @@ FLOW_BIN="$FLOW_DIR/bin"
 mkdir -p "$FLOW_BIN" "$FLOW_DIR/home" "$FLOW_DIR/tmp"
 cp "$here/test/stubs/yap" "$here/test/stubs/curl" "$here/test/stubs/llama-server" "$here/test/stubs/pbcopy" "$FLOW_BIN/"
 ln -s "$(command -v jq)" "$FLOW_BIN/jq"
-: > "$FLOW_DIR/bonsai.gguf"
-BONSAI_ENV=(SOAPCAP_BONSAI_SERVER="$FLOW_BIN/llama-server" SOAPCAP_BONSAI_GGUF="$FLOW_DIR/bonsai.gguf")
+: > "$FLOW_DIR/bonsai.gguf"; : > "$FLOW_DIR/gemma.gguf"
+# Each makes one of the engine's models set up, on the stub llama-server.
+BONSAI_ENV=(SOAPCAP_LLAMA_SERVER="$FLOW_BIN/llama-server" SOAPCAP_BONSAI_GGUF="$FLOW_DIR/bonsai.gguf")
+GEMMA_ENV=(SOAPCAP_LLAMA_SERVER="$FLOW_BIN/llama-server" SOAPCAP_GEMMA_GGUF="$FLOW_DIR/gemma.gguf")
+# install.sh has run at the current level (lib/install_level.sh), so
+# soapcap goes straight to the command; the install-level tests below undo it.
+( HOME="$FLOW_DIR/home"; . "$here/lib/install_level.sh"; sc_install_record )
+# The soapcap the runs start; the install-level tests point it at a copy
+# whose install.sh is a stub.
+FLOW_SOAPCAP="$here/bin/soapcap"
 
 # flow_run SIGNAL [VAR=VALUE ...] -- soapcap ARGS...
 # SIGNAL "none" waits for soapcap to finish on its own. Otherwise, once the
@@ -34,7 +42,11 @@ FLOW_ENV=(PATH="$FLOW_BIN:/usr/bin:/bin" HOME="$FLOW_DIR/home" TMPDIR="$FLOW_DIR
   STUB_STRUCT_COUNT="$FLOW_DIR/struct.count" STUB_CLIPBOARD="$FLOW_DIR/clipboard"
   # The fake model answers every format with the same SOAP-shaped note, so
   # re-drafting incomplete notes (tested in test/run.sh) is off here.
-  SOAPCAP_NOTE_ATTEMPTS=1)
+  SOAPCAP_NOTE_ATTEMPTS=1
+  # Ollama's path runs through the (untested) model the stub reports
+  # pulled; the default, gemma4-e4b (SOAPCAP_MODEL=), and bonsai run on the
+  # stub llama-server.
+  SOAPCAP_MODEL=other:1b)
 
 flow_reset() {
   : > "$FLOW_DIR/yap.log"; : > "$FLOW_DIR/curl.log"; : > "$FLOW_DIR/llama.log"; : > "$FLOW_DIR/curl.args"
@@ -67,7 +79,7 @@ flow_run() {
   # shellcheck disable=SC2016  # $SIG is a perl variable, not a shell one
   env -i "${FLOW_ENV[@]}" \
     ${envs[@]+"${envs[@]}"} \
-    /usr/bin/perl -e '$SIG{INT} = "DEFAULT"; exec @ARGV' "$here/bin/soapcap" "$@" \
+    /usr/bin/perl -e '$SIG{INT} = "DEFAULT"; exec @ARGV' "$FLOW_SOAPCAP" "$@" \
     <"${FLOW_STDIN:-/dev/null}" >"$FLOW_DIR/out" 2>"$FLOW_DIR/err" &
   local pid=$!
   # (Detached from stdout: the sleep outlives the watchdog, and would hold a
@@ -116,7 +128,7 @@ flow_tty() {
     echo 'trap : INT'
     echo "stty rows ${FLOW_ROWS:-60} cols 100"
     printf 'env -i TERM=xterm'
-    printf ' %q' "${FLOW_ENV[@]}" ${envs[@]+"${envs[@]}"} "$here/bin/soapcap" "$@"
+    printf ' %q' "${FLOW_ENV[@]}" ${envs[@]+"${envs[@]}"} "$FLOW_SOAPCAP" "$@"
     echo
     printf 'echo $? > %q\n' "$FLOW_DIR/tty.rc"
   } > "$FLOW_DIR/tty.sh"
@@ -224,7 +236,7 @@ flow_run none -- note
 assert_contains "note: prints the drafted note" "$FLOW_OUT" "SUBJECTIVE:"
 assert_contains "note: prints the note body" "$FLOW_OUT" "Stub note"
 assert_eq "note: exits 0" "0" "$FLOW_RC"
-assert_eq "note: requests the default model" "llama3.1:8b" "$(jq -r .model "$FLOW_DIR/first.json")"
+assert_eq "note: requests the configured model" "other:1b" "$(jq -r .model "$FLOW_DIR/first.json")"
 assert_eq "note: asks for a streamed response (live token count)" "true" "$(jq -r .stream "$FLOW_DIR/first.json")"
 assert_eq "note: sends the transcript after the prompt" "yes" \
   "$(jq -r '.prompt | contains("TRANSCRIPT:\nTherapist: hi\nClient: hello")' "$FLOW_DIR/first.json" | sed 's/true/yes/; s/false/no/')"
@@ -233,7 +245,7 @@ assert_eq "note: starts with the SOAP prompt" "$(head -1 "$here/prompts/soap.md"
 assert_eq "note: sizes num_ctx to at least 4096" "yes" \
   "$([ "$(jq -r .options.num_ctx "$FLOW_DIR/first.json")" -ge 4096 ] && echo yes || echo no)"
 
-assert_eq "note: unloads the Ollama model once the note is done" "unload llama3.1:8b" \
+assert_eq "note: unloads the Ollama model once the note is done" "unload other:1b" \
   "$(tail -n 1 "$FLOW_DIR/curl.log")"
 assert_eq "note: ...only once, after both passes" "1" "$(grep -c '^unload' "$FLOW_DIR/curl.log" | tr -d ' ')"
 
@@ -298,26 +310,100 @@ flow_run none -- note --duration 1h
 assert_eq "duration: anything but whole minutes is refused" "1" "$FLOW_RC"
 assert_eq "duration: ...before any request" "" "$(cat "$FLOW_DIR/curl.log")"
 
-flow_run none -- note --model other:1b
+flow_run none -- note --model missing:1b
 assert_contains "note: an unpulled model is reported" "$FLOW_ERR" "is not pulled"
-assert_contains "note: an unpulled model's error says how to pull it" "$FLOW_ERR" "ollama pull other:1b"
+assert_contains "note: an unpulled model's error says how to pull it" "$FLOW_ERR" "ollama pull missing:1b"
 
-flow_run none STUB_OLLAMA_MODEL=other:1b -- note --model other:1b
+flow_run none -- note
 assert_contains "note: an untested model gets a warning" "$FLOW_ERR" "hasn't been tested"
 assert_eq "note: an untested model still drafts" "0" "$FLOW_RC"
 
-flow_run none -- note
-assert_not_contains "note: the default model gets no untested warning" "$FLOW_ERR" "hasn't been tested"
+# --- note with the default, gemma4-e4b -----------------------------------
+
+flow_run none "${GEMMA_ENV[@]}" SOAPCAP_MODEL= STUB_OLLAMA_MODE=down -- note
+assert_eq "gemma: the default drafts on the engine, with Ollama down" "0" "$FLOW_RC"
+assert_contains "gemma: prints the drafted note" "$FLOW_OUT" "Engine stub note"
+assert_not_contains "gemma: no untested warning" "$FLOW_ERR" "hasn't been tested"
+assert_not_contains "gemma: never asks Ollama for models" "$(cat "$FLOW_DIR/curl.log")" "/api/tags"
+assert_contains "gemma: says what it is loading" "$FLOW_ERR" "Loading Gemma 4 E4B"
+assert_contains "gemma: server loads Gemma's weights" "$(cat "$FLOW_DIR/llama.log")" "-m $FLOW_DIR/gemma.gguf"
+assert_contains "gemma: server checkpoints every request (sliding window)" "$(cat "$FLOW_DIR/llama.log")" "--checkpoint-min-step 0"
+assert_eq "gemma: reads the transcript alone first, and the draft and Objective open with it" "1 true true" \
+  "$(jq -rs '(.[0].messages[0].content) as $o
+    | "\(.[0].max_tokens) \(.[1].messages[0].content | startswith($o)) \(.[2].messages[0].content | startswith($o))"' \
+    "$FLOW_DIR/payloads.jsonl")"
+assert_eq "gemma: server is stopped after the note" "stopped 0" "$(tail -n 1 "$FLOW_DIR/llama.log") $FLOW_LLAMA_LEFT"
+assert_not_contains "gemma: nothing about the retired model" "$FLOW_ERR" "retired"
+
+flow_run none SOAPCAP_MODEL= -- note
+assert_eq "gemma: not set up exits non-zero" "1" "$FLOW_RC"
+assert_contains "gemma: not set up points to the installer" "$FLOW_ERR" "tools/models/install.sh gemma4-e4b"
+assert_not_contains "gemma: ...and, with no llama3.1:8b here, nothing about it" "$FLOW_ERR" "retired"
+
+# --- the retired llama3.1:8b ----------------------------------------------
+
+flow_run none STUB_OLLAMA_MODEL=llama3.1:8b -- note --model llama3.1:8b
+assert_contains "retired: using llama3.1:8b says it is retired" "$FLOW_ERR" "llama3.1:8b is retired"
+assert_contains "retired: ...and how to replace it" "$FLOW_ERR" "Strongly recommended: run $here/install.sh"
+assert_eq "retired: ...and still drafts" "0" "$FLOW_RC"
+
+llama_manifest="$FLOW_DIR/home/.ollama/models/manifests/registry.ollama.ai/library/llama3.1/8b"
+mkdir -p "${llama_manifest%/*}"; : > "$llama_manifest"
+flow_run none SOAPCAP_MODEL= -- note
+assert_contains "retired: the default not set up, with llama3.1:8b still here, says Gemma replaces it" \
+  "$FLOW_ERR" "default note model is now Gemma 4 E4B"
+assert_contains "retired: ...points to install.sh" "$FLOW_ERR" "Strongly recommended: run $here/install.sh"
+assert_contains "retired: ...and says what still works meanwhile" "$FLOW_ERR" "--model llama3.1:8b still drafts"
+
+flow_run TERM SOAPCAP_MODEL= -- session --format soap
+assert_contains "retired: session says so before recording" \
+  "$(printf '%s\n' "$FLOW_ERR" | sed '/Transcript:/q')" "default note model is now Gemma 4 E4B"
+assert_eq "retired: ...once, though the draft afterwards checks again" "1" \
+  "$(printf '%s\n' "$FLOW_ERR" | grep -c 'Strongly recommended')"
+
+flow_run none "${GEMMA_ENV[@]}" SOAPCAP_MODEL= -- note
+assert_not_contains "retired: nothing once Gemma is set up" "$FLOW_ERR" "retired"
+rm -rf "$FLOW_DIR/home/.ollama"
+
+# --- install level: an update that needs install.sh --------------------------
+# (On a terminal: further down, with the tty tests.)
+
+level_file="$FLOW_DIR/home/.local/share/soapcap/install-level"
+flow_cfg="$FLOW_DIR/home/.config/soapcap/config.sh"
+flow_record() { ( HOME="$FLOW_DIR/home"; . "$here/lib/install_level.sh"; sc_install_record ); }
+rm -f "$level_file"
+mkdir -p "${llama_manifest%/*}"; : > "$llama_manifest"
+
+flow_run none SOAPCAP_MODEL= STUB_OLLAMA_MODEL=llama3.1:8b -- note
+assert_contains "install level: behind, off a terminal, says install.sh is needed" "$FLOW_ERR" \
+  "this update needs $here/install.sh"
+assert_eq "install level: ...drafts with llama3.1:8b, the old default, while Gemma isn't set up" "0 llama3.1:8b" \
+  "$FLOW_RC $(jq -r .model "$FLOW_DIR/first.json")"
+assert_eq "install level: ...saving nothing to config.sh" "no" "$([ -e "$flow_cfg" ] && echo yes || echo no)"
+assert_not_contains "install level: ...without the retired warning on top" "$FLOW_ERR" "Strongly recommended"
+assert_eq "install level: ...and it never records itself" "no" "$([ -e "$level_file" ] && echo yes || echo no)"
+
+flow_run none "${GEMMA_ENV[@]}" SOAPCAP_MODEL= -- note
+assert_contains "install level: Gemma set up, the note uses it" "$(cat "$FLOW_DIR/llama.log")" "-m $FLOW_DIR/gemma.gguf"
+
+flow_run none -- version
+assert_not_contains "install level: version runs as it is" "$FLOW_ERR" "install.sh"
+
+flow_record
+flow_run none SOAPCAP_MODEL= STUB_OLLAMA_MODEL=llama3.1:8b -- note
+assert_not_contains "install level: recorded, nothing about install.sh's level" "$FLOW_ERR" "this update needs"
+rm -rf "$FLOW_DIR/home/.ollama"
 
 # --- note --model bonsai -------------------------------------------------
 
 flow_run none "${BONSAI_ENV[@]}" STUB_OLLAMA_MODE=down -- note --model bonsai
-assert_contains "bonsai: prints the drafted note" "$FLOW_OUT" "Bonsai stub note"
+assert_contains "bonsai: prints the drafted note" "$FLOW_OUT" "Engine stub note"
 assert_eq "bonsai: exits 0 even with Ollama down" "0" "$FLOW_RC"
 assert_not_contains "bonsai: never asks Ollama for models" "$(cat "$FLOW_DIR/curl.log")" "/api/tags"
 assert_not_contains "bonsai: no untested warning" "$FLOW_ERR" "hasn't been tested"
 assert_contains "bonsai: server binds to localhost only" "$(cat "$FLOW_DIR/llama.log")" "--host 127.0.0.1"
 assert_contains "bonsai: server loads the configured model" "$(cat "$FLOW_DIR/llama.log")" "-m $FLOW_DIR/bonsai.gguf"
+assert_not_contains "bonsai: no checkpoint flag (Gemma's alone)" "$(cat "$FLOW_DIR/llama.log")" "--checkpoint-min-step"
 assert_eq "bonsai: server is stopped after the note" "stopped" "$(tail -n 1 "$FLOW_DIR/llama.log")"
 assert_eq "bonsai: no server left running" "0" "$FLOW_LLAMA_LEFT"
 assert_eq "bonsai: thinking is turned off" "false" \
@@ -335,9 +421,9 @@ assert_eq "bonsai: one server start for the note and its Objective" "1" \
   "$(grep -c '^started' "$FLOW_DIR/llama.log" | tr -d ' ')"
 assert_contains "bonsai: the Objective pass is filled in" "$FLOW_OUT" "On time via video. Stub engaged."
 
-flow_run none SOAPCAP_BONSAI_SERVER=/nonexistent/llama-server -- note --model bonsai
+flow_run none SOAPCAP_LLAMA_SERVER=/nonexistent/llama-server -- note --model bonsai
 assert_eq "bonsai: not set up exits non-zero" "1" "$FLOW_RC"
-assert_contains "bonsai: not set up points to the installer" "$FLOW_ERR" "tools/bonsai/install.sh"
+assert_contains "bonsai: not set up points to the installer" "$FLOW_ERR" "tools/models/install.sh bonsai"
 
 flow_run none "${BONSAI_ENV[@]}" STUB_LLAMA_BUSY=1 -- note --model bonsai
 assert_contains "bonsai: a busy port is refused" "$FLOW_ERR" "already listening on port"
@@ -347,15 +433,15 @@ flow_run none "${BONSAI_ENV[@]}" STUB_LLAMA_MODE=crash -- note --model bonsai
 assert_contains "bonsai: a failed load is reported" "$FLOW_ERR" "exited while loading"
 assert_contains "bonsai: a failed load shows the server's own error" "$FLOW_ERR" "error loading model"
 
-flow_run none "${BONSAI_ENV[@]}" STUB_BONSAI_REPLY=error -- note --model bonsai
+flow_run none "${BONSAI_ENV[@]}" STUB_ENGINE_REPLY=error -- note --model bonsai
 assert_contains "bonsai: a server error message is surfaced" "$FLOW_ERR" "Bonsai error: boom"
 assert_eq "bonsai: server stopped after an error" "0" "$FLOW_LLAMA_LEFT"
 
-flow_run none "${BONSAI_ENV[@]}" STUB_BONSAI_REPLY=length -- note --model bonsai
+flow_run none "${BONSAI_ENV[@]}" STUB_ENGINE_REPLY=length -- note --model bonsai
 assert_contains "bonsai: a truncated note is flagged" "$FLOW_ERR" "output limit"
 
 t0=$SECONDS
-FLOW_READY=llama flow_run TERM "${BONSAI_ENV[@]}" STUB_BONSAI_REPLY=hang -- note --model bonsai
+FLOW_READY=llama flow_run TERM "${BONSAI_ENV[@]}" STUB_ENGINE_REPLY=hang -- note --model bonsai
 assert_eq "bonsai: SIGTERM mid-note is acted on at once, not after the request" "yes" \
   "$([ $((SECONDS - t0)) -lt 5 ] && echo yes || echo no)"
 assert_eq "bonsai: SIGTERM mid-note stops the server" "stopped" "$(tail -n 1 "$FLOW_DIR/llama.log")"
@@ -375,7 +461,7 @@ assert_eq "note: a down Ollama exits non-zero" "1" "$FLOW_RC"
 
 flow_run none STUB_OLLAMA_MODE=error -- note
 assert_contains "note: an Ollama error message is surfaced" "$FLOW_ERR" "Ollama error: boom"
-assert_eq "note: a failed draft still unloads the model" "unload llama3.1:8b" "$(tail -n 1 "$FLOW_DIR/curl.log")"
+assert_eq "note: a failed draft still unloads the model" "unload other:1b" "$(tail -n 1 "$FLOW_DIR/curl.log")"
 
 flow_run none STUB_OLLAMA_MODE=empty -- note
 assert_contains "note: an empty response is reported" "$FLOW_ERR" "no content"
@@ -503,7 +589,7 @@ assert_contains "combined: ...and says it wasn't checked" "$FLOW_ERR" "review pa
 
 flow_run none "${BONSAI_ENV[@]}" STUB_OLLAMA_MODE=down -- note --model bonsai --style combined
 assert_eq "combined bonsai: exits 0" "0" "$FLOW_RC"
-assert_contains "combined bonsai: prints the narrative note" "$FLOW_OUT" "Bonsai stub note"
+assert_contains "combined bonsai: prints the narrative note" "$FLOW_OUT" "Engine stub note"
 assert_eq "combined bonsai: one server start for both passes" "1" "$(grep -c '^started' "$FLOW_DIR/llama.log" | tr -d ' ')"
 assert_eq "combined bonsai: three requests to it" "3" "$(nreq /v1/chat/completions)"
 assert_eq "combined bonsai: the narrative pass keeps its tested settings" "0.7 2000 false" \
@@ -578,17 +664,17 @@ assert_not_contains "host: a loopback host gets none" "$FLOW_ERR" "is not this M
 # --- config ---------------------------------------------------------------
 
 printf 'SOAPCAP_FORMAT=""\nSOAPCAP_MODEL=""\n' > "$FLOW_DIR/blank.sh"
-flow_run none SOAPCAP_CONFIG="$FLOW_DIR/blank.sh" -- note
-assert_eq "config: a blank entry means the default (SOAP, llama3.1:8b)" "$(head -1 "$here/prompts/soap.md") llama3.1:8b" \
-  "$(jq -r '(.prompt | split("\n")[0]) + " " + .model' "$FLOW_DIR/first.json")"
+flow_run none "${GEMMA_ENV[@]}" SOAPCAP_CONFIG="$FLOW_DIR/blank.sh" -- note
+assert_eq "config: a blank entry means the default (SOAP, gemma4-e4b)" "yes yes" \
+  "$(sed -n 2p "$FLOW_DIR/payloads.jsonl" | jq -r --arg p "$(head -1 "$here/prompts/soap.md")" '.messages[0].content | contains($p)' | yesno) $(grep -q -- "-m $FLOW_DIR/gemma.gguf" "$FLOW_DIR/llama.log" && echo yes || echo no)"
 
 SOAPCAP_CONFIG="$FLOW_DIR/model.sh"
 sc_save_model_config bonsai
 assert_eq "model config: created when there is no config yet" 'SOAPCAP_MODEL="bonsai"' "$(cat "$SOAPCAP_CONFIG")"
 printf '# mine\nSOAPCAP_MODEL="old"\nSOAPCAP_LOCALE="en-US"\n' > "$SOAPCAP_CONFIG"
-sc_save_model_config llama3.1:8b
+sc_save_model_config gemma4-e4b
 assert_eq "model config: an existing entry is replaced where it stands" '# mine
-SOAPCAP_MODEL="llama3.1:8b"
+SOAPCAP_MODEL="gemma4-e4b"
 SOAPCAP_LOCALE="en-US"' "$(cat "$SOAPCAP_CONFIG")"
 unset SOAPCAP_CONFIG
 
@@ -671,9 +757,9 @@ assert_not_contains "session: a declined transcript isn't shown" "$FLOW_OUT" "--
 assert_eq "session: regenerate drafts again with the model still loaded (unloaded only after draft 2)" "2" \
   "$(awk '/api\/generate/ { drafts++ } /^unload/ { print drafts; exit }' "$FLOW_DIR/curl.log")"
 assert_contains "session: the other installed model is offered by name" "$FLOW_OUT" "[t]ry bonsai"
-assert_eq "session: switching unloads the first model before the second drafts" "unload llama3.1:8b" \
+assert_eq "session: switching unloads the first model before the second drafts" "unload other:1b" \
   "$(grep -B1 -m1 '/health' "$FLOW_DIR/curl.log" | head -n 1)"
-assert_contains "session: the kept draft is the second model's" "$(cat "$FLOW_DIR/clipboard")" "Bonsai stub note"
+assert_contains "session: the kept draft is the second model's" "$(cat "$FLOW_DIR/clipboard")" "Engine stub note"
 assert_eq "session: ...whose server is stopped at the end" "stopped 0" "$(tail -n 1 "$FLOW_DIR/llama.log") $FLOW_LLAMA_LEFT"
 
 flow_tty STUB_OLLAMA_MODE=error -- session <<STEPS
@@ -708,6 +794,42 @@ STEPS
 else
   echo "skip session: paging (less isn't installed)"
 fi
+
+# The install-level offer, on a copy of soapcap whose install.sh is a stub
+# that records the level and changes a setting, so a run that starts over
+# afterwards shows it read config.sh again.
+flow_root="$FLOW_DIR/root"
+mkdir -p "$flow_root"
+cp -R "$here/bin" "$here/lib" "$here/prompts" "$flow_root/"
+cat > "$flow_root/install.sh" <<EOF
+#!/usr/bin/env bash
+echo ran >> "$FLOW_DIR/install.log"
+. "$flow_root/lib/install_level.sh"; sc_install_record
+mkdir -p "\$HOME/.config/soapcap"; echo 'SOAPCAP_FORMAT="dap"' >> "\$HOME/.config/soapcap/config.sh"
+EOF
+chmod +x "$flow_root/install.sh"
+FLOW_SOAPCAP="$flow_root/bin/soapcap"
+
+rm -f "$level_file" "$FLOW_DIR/install.log"
+flow_tty -- note "$FLOW_DIR/transcript.txt" <<STEPS
+install.sh now?${tab}n\n
+STEPS
+assert_eq "install level: on a terminal, install.sh is offered" "" "$FLOW_STUCK"
+assert_eq "install level: ...a no doesn't run it" "no" "$([ -e "$FLOW_DIR/install.log" ] && echo yes || echo no)"
+assert_contains "install level: ...and the command goes on" "$FLOW_OUT" "Stub note"
+
+flow_tty -- note "$FLOW_DIR/transcript.txt" <<STEPS
+install.sh now?${tab}\n
+STEPS
+assert_eq "install level: a yes runs install.sh, once" "ran" "$(cat "$FLOW_DIR/install.log" 2>/dev/null)"
+assert_eq "install level: ...asks once" "1" "$(printf '%s' "$FLOW_OUT" | grep -c 'install.sh now?')"
+assert_eq "install level: ...then starts over, reading what install.sh changed" "$(head -1 "$here/prompts/dap.md")" \
+  "$(jq -r '.prompt | split("\n")[0]' "$FLOW_DIR/first.json")"
+assert_eq "install level: ...and the note drafts" "0" "$FLOW_RC"
+
+FLOW_SOAPCAP="$here/bin/soapcap"
+rm -f "$flow_cfg"
+flow_record
 
 # --- misc ----------------------------------------------------------------
 

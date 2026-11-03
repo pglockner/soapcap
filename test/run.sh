@@ -197,7 +197,7 @@ redraft() {
       SC_RAW_NOTE=$(printf '%b' "${!d}"); SC_RAW_DONE=stop
     }
     long=$(printf "${SPEAKER:-Client}: word %.0s" $(seq 1 100))
-    sc_generate_note soap llama3.1:8b http://x "$long" narrative 2>/dev/null
+    sc_generate_note soap other:1b http://x "$long" narrative 2>/dev/null
     printf '%s drafts\n%s\n' "$calls" "$SC_NOTE" | grep -v '^$' | paste -sd '|' -
   )
 }

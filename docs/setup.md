@@ -19,14 +19,14 @@ outright):
 ```
   ok    macOS 26.x
   ok    Apple M5, 16GB unified memory, 10 cores
-        16GB: llama3.1:8b (default) works; close memory-heavy apps
+        16GB: gemma4-e4b (default) works; close memory-heavy apps
         (browsers, other local models) first. bonsai fits too, but uses
         most of this memory while it drafts
   ok    yap 1.2.1 (/opt/homebrew/bin/yap)
   ok    jq 1.8.2 (/opt/homebrew/bin/jq)
   ok    yap ran and returned valid JSON — permissions look granted
 
-  ok    ollama running, llama3.1:8b pulled — 'note' is ready
+  ok    Gemma 4 E4B set up — 'note' is ready
   ok    Bonsai set up — 'note --model bonsai' is ready
   ok    gum present — 'session' prompts use it for arrow-key choose/confirm
   ok    fzf present — 'note' with no FILE can browse for one
@@ -34,15 +34,17 @@ outright):
 Ready.
 ```
 
-`ollama`/Bonsai/`gum`/`fzf` lines are informational — `live`/`transcribe` work
-without any of them. `install.sh` offers to set up `note` (Ollama +
-`llama3.1:8b`) already; by hand:
+The note-model, `gum` and `fzf` lines are informational —
+`live`/`transcribe` work without any of them. `install.sh` offers to set up
+`note` already; by hand:
 
 ```sh
-brew install ollama
-brew services start ollama       # keeps it running across reboots
-ollama pull llama3.1:8b          # ~5GB, one time
+tools/models/install.sh gemma4-e4b   # builds the engine once (~2 min, needs
+                                     # Xcode command line tools), then ~5GB
 ```
+
+If `doctor` warns that `llama3.1:8b` is retired, re-run `./install.sh`: it
+replaces it with Gemma 4 E4B and removes it.
 
 ## Nicer prompts and file picking
 
@@ -96,8 +98,9 @@ fileicon set ~/Desktop/soapcap.command /path/to/soapcap/assets/soapcap.icns
 ```
 
 **Updating**: `update.command` is a second double-clickable shortcut that
-runs `git pull` in the repo. `install.sh` only adds it for a git clone (a
-ZIP download has no `.git` to pull from). By hand:
+runs `git pull` in the repo, then `install.sh` if the update needs it.
+`install.sh` only adds it for a git clone (a ZIP download has no `.git` to
+pull from). By hand:
 
 ```sh
 ln -sf /path/to/soapcap/update.command ~/Desktop/update.command

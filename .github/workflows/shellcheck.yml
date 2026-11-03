@@ -1,6 +1,6 @@
 name: Lint and tests
 
-# soapcap only runs on macOS 26 (Apple silicon) and depends on yap, Ollama,
+# soapcap only runs on macOS 26 (Apple silicon) and depends on yap, a local model,
 # and real audio hardware — none of which this runner has, so the actual
 # CLI is never invoked here. This workflow is syntax/lint plus fixture
 # tests of the pure text-transformation logic plus stub-based flow tests
@@ -20,7 +20,7 @@ jobs:
 
       - name: bash -n syntax check
         run: |
-          for f in bin/soapcap install.sh soapcap.command update.command test/run.sh test/flow.sh test/linux.sh test/samples.sh test/stubs/curl test/stubs/llama-server test/stubs/pbcopy lib/*.sh tools/bonsai/install.sh tools/deidentify/install.sh; do
+          for f in bin/soapcap install.sh soapcap.command update.command test/run.sh test/flow.sh test/linux.sh test/samples.sh test/stubs/curl test/stubs/llama-server test/stubs/pbcopy lib/*.sh tools/models/install.sh tools/deidentify/install.sh; do
             bash -n "$f"
           done
 
@@ -32,7 +32,7 @@ jobs:
           SUDO=""
           command -v sudo >/dev/null 2>&1 && SUDO=sudo
           $SUDO apt-get update -qq && $SUDO apt-get install -y -qq shellcheck
-          shellcheck bin/soapcap install.sh soapcap.command update.command test/run.sh test/flow.sh test/samples.sh test/stubs/curl test/stubs/llama-server test/stubs/pbcopy lib/*.sh config.example.sh tools/bonsai/install.sh tools/deidentify/install.sh
+          shellcheck bin/soapcap install.sh soapcap.command update.command test/run.sh test/flow.sh test/samples.sh test/stubs/curl test/stubs/llama-server test/stubs/pbcopy lib/*.sh config.example.sh tools/models/install.sh tools/deidentify/install.sh
 
       - name: fixture tests
         run: |

@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # soapcap — the commands (doctor, model, live, note, deidentify, session) and
-# the note-model pieces they draft with (generate, ollama, bonsai).
+# the note-model pieces they draft with (generate, ollama, engine).
 
 _sc_lib="${BASH_SOURCE[0]%/*}"
 # shellcheck source=lib/doctor.sh
@@ -13,12 +13,14 @@ _sc_lib="${BASH_SOURCE[0]%/*}"
 . "$_sc_lib/generate.sh"
 # shellcheck source=lib/ollama.sh
 . "$_sc_lib/ollama.sh"
-# shellcheck source=lib/bonsai.sh
-. "$_sc_lib/bonsai.sh"
+# shellcheck source=lib/engine.sh
+. "$_sc_lib/engine.sh"
 # shellcheck source=lib/note.sh
 . "$_sc_lib/note.sh"
 # shellcheck source=lib/deidentify.sh
 . "$_sc_lib/deidentify.sh"
 # shellcheck source=lib/session.sh
 . "$_sc_lib/session.sh"
+# shellcheck source=lib/install_level.sh
+. "$_sc_lib/install_level.sh"
 unset _sc_lib

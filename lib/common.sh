@@ -12,11 +12,11 @@ SOAPCAP_MIC_LABEL="${SOAPCAP_MIC_LABEL:-Therapist}"
 SOAPCAP_SYSTEM_LABEL="${SOAPCAP_SYSTEM_LABEL:-Client}"
 SOAPCAP_LOCALE="${SOAPCAP_LOCALE:-}"
 
-# `note` (local SOAP/DAP/BIRP generation). llama3.1:8b via Ollama is the
-# default; `bonsai` is the other tested choice. Any other Ollama tag works
-# but is untested with soapcap's prompts — see sc_model_catalog and README
-# "Draft a note".
-SOAPCAP_MODEL="${SOAPCAP_MODEL:-llama3.1:8b}"
+# `note` (local SOAP/DAP/BIRP generation). gemma4-e4b (Gemma 4 E4B, on
+# soapcap's own llama-server) is the default; `bonsai` is the other tested
+# choice. Any Ollama tag works too but is untested with soapcap's prompts —
+# see sc_model_catalog and README "Draft a note".
+SOAPCAP_MODEL="${SOAPCAP_MODEL:-gemma4-e4b}"
 SOAPCAP_FORMAT="${SOAPCAP_FORMAT:-soap}"
 SOAPCAP_STYLE="${SOAPCAP_STYLE:-narrative}"
 SOAPCAP_OLLAMA_HOST="${SOAPCAP_OLLAMA_HOST:-http://localhost:11434}"
@@ -41,18 +41,20 @@ _sc_cfg="${SOAPCAP_CONFIG:-$HOME/.config/soapcap/config.sh}"
 # shellcheck source=/dev/null
 [ -f "$_sc_cfg" ] && . "$_sc_cfg"
 # An entry left blank in config.sh means "the default", not "nothing".
-SOAPCAP_MODEL="${SOAPCAP_MODEL:-llama3.1:8b}"
+SOAPCAP_MODEL="${SOAPCAP_MODEL:-gemma4-e4b}"
 SOAPCAP_FORMAT="${SOAPCAP_FORMAT:-soap}"
 SOAPCAP_STYLE="${SOAPCAP_STYLE:-narrative}"
 SOAPCAP_NOTE_ATTEMPTS="${SOAPCAP_NOTE_ATTEMPTS:-3}"
 
-# `--model bonsai` (Bonsai 2 27B via PrismML's llama.cpp fork, set up by
-# tools/bonsai/install.sh). Resolved after config.sh so a SOAPCAP_BONSAI_DIR
-# set there also moves the two paths derived from it.
-SOAPCAP_BONSAI_DIR="${SOAPCAP_BONSAI_DIR:-$HOME/.local/share/soapcap/bonsai}"
-SOAPCAP_BONSAI_SERVER="${SOAPCAP_BONSAI_SERVER:-$SOAPCAP_BONSAI_DIR/llama.cpp/build/bin/llama-server}"
-SOAPCAP_BONSAI_GGUF="${SOAPCAP_BONSAI_GGUF:-$SOAPCAP_BONSAI_DIR/Ternary-Bonsai-2-27B-PTQ1_0.gguf}"
-SOAPCAP_BONSAI_PORT="${SOAPCAP_BONSAI_PORT:-18080}"
+# The engine behind gemma4-e4b and bonsai (lib/engine.sh): llama-server from
+# PrismML's llama.cpp fork and the models' weights, set up by
+# tools/models/install.sh. Resolved after config.sh so a SOAPCAP_ENGINE_DIR
+# set there also moves the paths derived from it.
+SOAPCAP_ENGINE_DIR="${SOAPCAP_ENGINE_DIR:-$HOME/.local/share/soapcap/engine}"
+SOAPCAP_LLAMA_SERVER="${SOAPCAP_LLAMA_SERVER:-$SOAPCAP_ENGINE_DIR/llama.cpp/build/bin/llama-server}"
+SOAPCAP_GEMMA_GGUF="${SOAPCAP_GEMMA_GGUF:-$SOAPCAP_ENGINE_DIR/gemma-4-E4B-it-Q4_K_M.gguf}"
+SOAPCAP_BONSAI_GGUF="${SOAPCAP_BONSAI_GGUF:-$SOAPCAP_ENGINE_DIR/Ternary-Bonsai-2-27B-PTQ1_0.gguf}"
+SOAPCAP_ENGINE_PORT="${SOAPCAP_ENGINE_PORT:-18080}"
 
 # ---- logging (everything human-facing goes to stderr; stdout is data) -------
 sc_err()  { printf 'soapcap: %s\n' "$*" >&2; }
@@ -307,7 +309,7 @@ USAGE
   soapcap deidentify [FILE] [opts]   Transcript (FILE or stdin) -> best-effort
                                   local PII redaction (needs tools/deidentify/install.sh)
   soapcap model [--host URL]      Show/pick the model session & note default
-                                  to (llama3.1:8b or bonsai)
+                                  to (gemma4-e4b or bonsai)
   soapcap session [opts]          Guided: capture, then offer to de-identify
                                   and draft a note — what soapcap.command runs
   soapcap version | help
@@ -328,12 +330,12 @@ OPTIONS (live / transcribe / session)
 
 OPTIONS (note / session)
   --out FILE            Write the note to FILE (default: stdout only)
-  --model NAME          llama3.1:8b (default) or bonsai — see OTHER MODELS
+  --model NAME          gemma4-e4b (default) or bonsai — see OTHER MODELS
   --format soap|dap|birp Note format           (default: soap)
   --style STYLE         narrative (default), structured, or combined — see STYLES
-  --host URL            Ollama server URL      (default: http://localhost:11434;
-                        anywhere else sends the transcript off this Mac, with
-                        a warning)
+  --host URL            Ollama server URL, for other models (default:
+                        http://localhost:11434; anywhere else sends the
+                        transcript off this Mac, with a warning)
 
 OPTIONS (note only)
   --duration MINUTES    Start the note with "MINUTES minutes, telehealth"
@@ -349,10 +351,12 @@ OPTIONS (deidentify)
   --clipboard            Also copy the result to the clipboard (pbcopy)
 
 MODELS
-  llama3.1:8b           Default. Fast; Ollama.
-  bonsai                Slower, more careful. Set up once with
-                        tools/bonsai/install.sh (builds a llama.cpp fork,
-                        ~6GB download; wants a 16GB+ Mac).
+  gemma4-e4b            Default. Gemma 4 E4B: fast, under two minutes for a
+                        long session; ~5GB download.
+  bonsai                Slower, more careful; ~6GB download, wants a 16GB+ Mac.
+  Set either up with tools/models/install.sh NAME (install.sh offers both);
+  the first one also builds a llama.cpp fork (Xcode command line tools).
+  llama3.1:8b, the old default, is retired: re-run install.sh to replace it.
 
 SOAP OBJECTIVE
   A SOAP note's Objective always comes from a second model pass: a
@@ -371,7 +375,7 @@ STYLES (structured and combined are experimental)
                         Reviews print to stderr, never the note.
 
 OTHER MODELS (untested)
-  Any other Ollama model works too, but soapcap's prompts haven't been
+  Any Ollama model works too, but soapcap's prompts haven't been
   tested with it — proofread its notes closely. Pull it, then name it:
     ollama pull qwen2.5:14b
     soapcap note --model qwen2.5:14b transcript.txt

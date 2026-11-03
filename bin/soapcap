@@ -35,6 +35,10 @@ trap 'sc_alt_screen_stop; sc_cleanup' EXIT
 
 main() {
   local cmd="${1:-help}"
+  # doctor, help and version run as they are, to say what's wrong.
+  case "$cmd" in
+    live|transcribe|note|deidentify|model|session) sc_install_offer "$@" ;;
+  esac
   [ $# -gt 0 ] && shift
   case "$cmd" in
     doctor)               sc_cmd_doctor "$@" ;;
