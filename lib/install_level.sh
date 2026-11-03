@@ -38,7 +38,8 @@ sc_install_record() {
 # model paths install.sh just changed are read afresh; SC_INSTALL_OFFERED
 # keeps that second start (or one after an install.sh that didn't finish)
 # from asking again. Going on without install.sh keeps notes drafting where
-# llama3.1:8b still can (sc_pin_retired_default).
+# llama3.1:8b still can (sc_retired_fallback), for this run only: nothing
+# is saved until install.sh runs.
 sc_install_offer() {
   sc_install_current && return 0
   if [ -z "${SC_INSTALL_OFFERED:-}" ] && [ -t 0 ]; then
@@ -53,9 +54,9 @@ sc_install_offer() {
   elif [ -z "${SC_INSTALL_OFFERED:-}" ]; then
     sc_info "soapcap: this update needs $SC_ROOT/install.sh ($SC_INSTALL_WHY) — run it from a terminal."
   fi
-  if [ "$SOAPCAP_MODEL" = gemma4-e4b ] && ! sc_engine_installed gemma4-e4b && sc_pin_retired_default; then
+  if [ "$SOAPCAP_MODEL" = gemma4-e4b ] && ! sc_engine_installed gemma4-e4b && sc_retired_fallback; then
     SOAPCAP_MODEL="$SC_RETIRED_MODEL"
-    sc_info "Kept llama3.1:8b as your default note model until then (SOAPCAP_MODEL in config.sh)."
+    sc_info "Until then, notes use llama3.1:8b, the old default."
   fi
   # Said just now; the note's own retired-model warning would repeat it.
   # shellcheck disable=SC2034  # read by sc_retired_notice (lib/model.sh)

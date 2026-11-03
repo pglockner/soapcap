@@ -377,15 +377,14 @@ mkdir -p "${llama_manifest%/*}"; : > "$llama_manifest"
 flow_run none SOAPCAP_MODEL= STUB_OLLAMA_MODEL=llama3.1:8b -- note
 assert_contains "install level: behind, off a terminal, says install.sh is needed" "$FLOW_ERR" \
   "this update needs $here/install.sh"
-assert_contains "install level: ...keeps llama3.1:8b as the default while Gemma isn't set up" \
-  "$(cat "$flow_cfg" 2>/dev/null)" 'SOAPCAP_MODEL="llama3.1:8b"'
-assert_eq "install level: ...so the note still drafts" "0" "$FLOW_RC"
+assert_eq "install level: ...drafts with llama3.1:8b, the old default, while Gemma isn't set up" "0 llama3.1:8b" \
+  "$FLOW_RC $(jq -r .model "$FLOW_DIR/first.json")"
+assert_eq "install level: ...saving nothing to config.sh" "no" "$([ -e "$flow_cfg" ] && echo yes || echo no)"
 assert_not_contains "install level: ...without the retired warning on top" "$FLOW_ERR" "Strongly recommended"
 assert_eq "install level: ...and it never records itself" "no" "$([ -e "$level_file" ] && echo yes || echo no)"
-rm -f "$flow_cfg"
 
 flow_run none "${GEMMA_ENV[@]}" SOAPCAP_MODEL= -- note
-assert_eq "install level: Gemma set up, the default is left alone" "no" "$([ -e "$flow_cfg" ] && echo yes || echo no)"
+assert_contains "install level: Gemma set up, the note uses it" "$(cat "$FLOW_DIR/llama.log")" "-m $FLOW_DIR/gemma.gguf"
 
 flow_run none -- version
 assert_not_contains "install level: version runs as it is" "$FLOW_ERR" "install.sh"

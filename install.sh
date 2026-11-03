@@ -58,7 +58,7 @@ fi
 # Before doctor, so it reports the models where they now are.
 cfg="${SOAPCAP_CONFIG:-$HOME/.config/soapcap/config.sh}"
 # shellcheck source=lib/model.sh
-. "$here/lib/model.sh"   # sc_save_model_config, sc_retired_pulled, sc_pin_retired_default
+. "$here/lib/model.sh"   # sc_save_model_config, sc_retired_pulled, sc_retired_fallback
 # shellcheck source=lib/install_level.sh
 . "$here/lib/install_level.sh"   # sc_install_record
 
@@ -338,7 +338,8 @@ fi
 # llama3.1:8b kept and Gemma not set up: before this update llama3.1:8b was
 # the default with no setting, so say so in config.sh, or notes would now
 # try the missing Gemma.
-if [ "$kept_retired" -eq 1 ] && [ "$gemma_ready" -eq 0 ] && sc_pin_retired_default; then
+if [ "$kept_retired" -eq 1 ] && [ "$gemma_ready" -eq 0 ] && sc_retired_fallback; then
+  sc_save_model_config "$SC_RETIRED_MODEL"
   echo "==> Default note model kept at llama3.1:8b (saved in config.sh) so notes keep working"
 fi
 

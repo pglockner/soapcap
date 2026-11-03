@@ -328,7 +328,7 @@ shows both with their live status and picks the default for
 tested with Gemma 4 E4B. After updating, soapcap offers to run
 `./install.sh`, which sets up Gemma 4 E4B, makes it your default, and
 removes `llama3.1:8b` from Ollama (checking it's gone). Until it has run,
-soapcap asks each time and keeps `llama3.1:8b` as your default, and `note`,
+soapcap asks each time and notes keep using `llama3.1:8b`, and `note`,
 `session` and `doctor` say it is retired.
 
 `--style` (or `SOAPCAP_STYLE`) chooses how the note is produced: `narrative`
