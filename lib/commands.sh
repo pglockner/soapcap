@@ -21,4 +21,6 @@ _sc_lib="${BASH_SOURCE[0]%/*}"
 . "$_sc_lib/deidentify.sh"
 # shellcheck source=lib/session.sh
 . "$_sc_lib/session.sh"
+# shellcheck source=lib/install_level.sh
+. "$_sc_lib/install_level.sh"
 unset _sc_lib

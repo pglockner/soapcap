@@ -128,6 +128,18 @@ sc_save_model_config() {
   fi
 }
 
+# sc_pin_retired_default — when config.sh names no model and llama3.1:8b is
+# still pulled, saves it as the default, so notes keep drafting with it
+# where the new default (gemma4-e4b) isn't set up: before this update,
+# llama3.1:8b was the default with no setting at all. For callers that know
+# Gemma 4 E4B isn't set up. True only when it saved.
+sc_pin_retired_default() {
+  local cfg="${SOAPCAP_CONFIG:-$HOME/.config/soapcap/config.sh}"
+  [ -f "$cfg" ] && grep -q '^SOAPCAP_MODEL="..*"' "$cfg" && return 1
+  sc_retired_pulled || return 1
+  sc_save_model_config "$SC_RETIRED_MODEL"
+}
+
 # soapcap model [--host URL]
 #
 # Shows the tested models as a table (with live status) and, with a real

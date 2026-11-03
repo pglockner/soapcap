@@ -36,6 +36,14 @@ if [ "$(command -v git)" = /usr/bin/git ] && /usr/bin/curl -V | grep -q SecureTr
 fi
 
 echo "==> Checking for soapcap updates..."
-"${git[@]}" pull
+# An update that needs install.sh (lib/install_level.sh) finishes here: the
+# check reads the just-pulled files, though this script is the copy that
+# was running before the pull.
+if "${git[@]}" pull && [ -f lib/install_level.sh ] \
+  && ! ( . lib/install_level.sh && sc_install_current ); then
+  echo
+  echo "==> This update needs install.sh to finish — running it"
+  ./install.sh || echo "==> install.sh didn't finish — re-run it any time: $PWD/install.sh"
+fi
 echo
 read -r -p "Press Enter to close..." _ || true

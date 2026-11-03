@@ -325,9 +325,11 @@ shows both with their live status and picks the default for
 `session`/`note`; `--model` overrides it per run.
 
 **`llama3.1:8b`, the old default, is retired**: soapcap's notes are now
-tested with Gemma 4 E4B. If you still have it, `note`, `session` and
-`doctor` say so; re-run `./install.sh`, which sets up Gemma 4 E4B, makes it
-your default, and removes `llama3.1:8b` from Ollama (checking it's gone).
+tested with Gemma 4 E4B. After updating, soapcap offers to run
+`./install.sh`, which sets up Gemma 4 E4B, makes it your default, and
+removes `llama3.1:8b` from Ollama (checking it's gone). Until it has run,
+soapcap asks each time and keeps `llama3.1:8b` as your default, and `note`,
+`session` and `doctor` say it is retired.
 
 `--style` (or `SOAPCAP_STYLE`) chooses how the note is produced: `narrative`
 (default, the model writes prose), or the experimental `structured` (the
@@ -364,7 +366,13 @@ For a file you already have (e.g. a QuickTime capture or a test clip). No speake
 `soapcap.command` at the repo root is a double-clickable entry point —
 Finder opens `.command` files in Terminal.app automatically and runs
 `soapcap session` there. `update.command` is a second one that runs
-`git pull` in the repo. `install.sh` offers to put both on your Desktop.
+`git pull` in the repo, then `install.sh` if the update needs it.
+`install.sh` offers to put both on your Desktop.
+
+An update that needs `install.sh` again (a new default model, a moved
+folder) says so: until it has run, `soapcap` offers to run it before any
+command but `doctor`, `help` and `version`, and goes on as before if you
+say no.
 
 The first double-click of a copy that came from a ZIP download, AirDrop or a
 USB drive is blocked by Gatekeeper; allow it once under **System Settings →

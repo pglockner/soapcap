@@ -58,7 +58,9 @@ fi
 # Before doctor, so it reports the models where they now are.
 cfg="${SOAPCAP_CONFIG:-$HOME/.config/soapcap/config.sh}"
 # shellcheck source=lib/model.sh
-. "$here/lib/model.sh"   # sc_save_model_config, sc_retired_pulled
+. "$here/lib/model.sh"   # sc_save_model_config, sc_retired_pulled, sc_pin_retired_default
+# shellcheck source=lib/install_level.sh
+. "$here/lib/install_level.sh"   # sc_install_record
 
 # Settings renamed when Bonsai's llama-server became the engine for every
 # tested model; commented-out examples are renamed too.
@@ -333,6 +335,12 @@ if [ -n "$new_default" ]; then
   sc_save_model_config "$new_default"
   echo "==> Default note model set to $new_default (the one that's installed)"
 fi
+# llama3.1:8b kept and Gemma not set up: before this update llama3.1:8b was
+# the default with no setting, so say so in config.sh, or notes would now
+# try the missing Gemma.
+if [ "$kept_retired" -eq 1 ] && [ "$gemma_ready" -eq 0 ] && sc_pin_retired_default; then
+  echo "==> Default note model kept at llama3.1:8b (saved in config.sh) so notes keep working"
+fi
 
 deidentify_ready=0
 deidentify_dir="${SOAPCAP_DEIDENTIFY_DIR:-$HOME/.local/share/soapcap/deidentify}"
@@ -382,4 +390,5 @@ if [ -n "$extras" ]; then
 
 Optional extras, not set up yet (re-run ./install.sh to be offered them, or run):$extras"
 fi
+sc_install_record   # whatever was answered: soapcap stops offering install.sh
 printf '%s\n' "$next_msg"

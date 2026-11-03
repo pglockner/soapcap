@@ -20,6 +20,12 @@ ln -s "$(command -v jq)" "$FLOW_BIN/jq"
 # Each makes one of the engine's models set up, on the stub llama-server.
 BONSAI_ENV=(SOAPCAP_LLAMA_SERVER="$FLOW_BIN/llama-server" SOAPCAP_BONSAI_GGUF="$FLOW_DIR/bonsai.gguf")
 GEMMA_ENV=(SOAPCAP_LLAMA_SERVER="$FLOW_BIN/llama-server" SOAPCAP_GEMMA_GGUF="$FLOW_DIR/gemma.gguf")
+# install.sh has run at the current level (lib/install_level.sh), so
+# soapcap goes straight to the command; the install-level tests below undo it.
+( HOME="$FLOW_DIR/home"; . "$here/lib/install_level.sh"; sc_install_record )
+# The soapcap the runs start; the install-level tests point it at a copy
+# whose install.sh is a stub.
+FLOW_SOAPCAP="$here/bin/soapcap"
 
 # flow_run SIGNAL [VAR=VALUE ...] -- soapcap ARGS...
 # SIGNAL "none" waits for soapcap to finish on its own. Otherwise, once the
@@ -73,7 +79,7 @@ flow_run() {
   # shellcheck disable=SC2016  # $SIG is a perl variable, not a shell one
   env -i "${FLOW_ENV[@]}" \
     ${envs[@]+"${envs[@]}"} \
-    /usr/bin/perl -e '$SIG{INT} = "DEFAULT"; exec @ARGV' "$here/bin/soapcap" "$@" \
+    /usr/bin/perl -e '$SIG{INT} = "DEFAULT"; exec @ARGV' "$FLOW_SOAPCAP" "$@" \
     <"${FLOW_STDIN:-/dev/null}" >"$FLOW_DIR/out" 2>"$FLOW_DIR/err" &
   local pid=$!
   # (Detached from stdout: the sleep outlives the watchdog, and would hold a
@@ -122,7 +128,7 @@ flow_tty() {
     echo 'trap : INT'
     echo "stty rows ${FLOW_ROWS:-60} cols 100"
     printf 'env -i TERM=xterm'
-    printf ' %q' "${FLOW_ENV[@]}" ${envs[@]+"${envs[@]}"} "$here/bin/soapcap" "$@"
+    printf ' %q' "${FLOW_ENV[@]}" ${envs[@]+"${envs[@]}"} "$FLOW_SOAPCAP" "$@"
     echo
     printf 'echo $? > %q\n' "$FLOW_DIR/tty.rc"
   } > "$FLOW_DIR/tty.sh"
@@ -357,6 +363,36 @@ assert_eq "retired: ...once, though the draft afterwards checks again" "1" \
 
 flow_run none "${GEMMA_ENV[@]}" SOAPCAP_MODEL= -- note
 assert_not_contains "retired: nothing once Gemma is set up" "$FLOW_ERR" "retired"
+rm -rf "$FLOW_DIR/home/.ollama"
+
+# --- install level: an update that needs install.sh --------------------------
+# (On a terminal: further down, with the tty tests.)
+
+level_file="$FLOW_DIR/home/.local/share/soapcap/install-level"
+flow_cfg="$FLOW_DIR/home/.config/soapcap/config.sh"
+flow_record() { ( HOME="$FLOW_DIR/home"; . "$here/lib/install_level.sh"; sc_install_record ); }
+rm -f "$level_file"
+mkdir -p "${llama_manifest%/*}"; : > "$llama_manifest"
+
+flow_run none SOAPCAP_MODEL= STUB_OLLAMA_MODEL=llama3.1:8b -- note
+assert_contains "install level: behind, off a terminal, says install.sh is needed" "$FLOW_ERR" \
+  "this update needs $here/install.sh"
+assert_contains "install level: ...keeps llama3.1:8b as the default while Gemma isn't set up" \
+  "$(cat "$flow_cfg" 2>/dev/null)" 'SOAPCAP_MODEL="llama3.1:8b"'
+assert_eq "install level: ...so the note still drafts" "0" "$FLOW_RC"
+assert_not_contains "install level: ...without the retired warning on top" "$FLOW_ERR" "Strongly recommended"
+assert_eq "install level: ...and it never records itself" "no" "$([ -e "$level_file" ] && echo yes || echo no)"
+rm -f "$flow_cfg"
+
+flow_run none "${GEMMA_ENV[@]}" SOAPCAP_MODEL= -- note
+assert_eq "install level: Gemma set up, the default is left alone" "no" "$([ -e "$flow_cfg" ] && echo yes || echo no)"
+
+flow_run none -- version
+assert_not_contains "install level: version runs as it is" "$FLOW_ERR" "install.sh"
+
+flow_record
+flow_run none SOAPCAP_MODEL= STUB_OLLAMA_MODEL=llama3.1:8b -- note
+assert_not_contains "install level: recorded, nothing about install.sh's level" "$FLOW_ERR" "this update needs"
 rm -rf "$FLOW_DIR/home/.ollama"
 
 # --- note --model bonsai -------------------------------------------------
@@ -759,6 +795,42 @@ STEPS
 else
   echo "skip session: paging (less isn't installed)"
 fi
+
+# The install-level offer, on a copy of soapcap whose install.sh is a stub
+# that records the level and changes a setting, so a run that starts over
+# afterwards shows it read config.sh again.
+flow_root="$FLOW_DIR/root"
+mkdir -p "$flow_root"
+cp -R "$here/bin" "$here/lib" "$here/prompts" "$flow_root/"
+cat > "$flow_root/install.sh" <<EOF
+#!/usr/bin/env bash
+echo ran >> "$FLOW_DIR/install.log"
+. "$flow_root/lib/install_level.sh"; sc_install_record
+mkdir -p "\$HOME/.config/soapcap"; echo 'SOAPCAP_FORMAT="dap"' >> "\$HOME/.config/soapcap/config.sh"
+EOF
+chmod +x "$flow_root/install.sh"
+FLOW_SOAPCAP="$flow_root/bin/soapcap"
+
+rm -f "$level_file" "$FLOW_DIR/install.log"
+flow_tty -- note "$FLOW_DIR/transcript.txt" <<STEPS
+install.sh now?${tab}n\n
+STEPS
+assert_eq "install level: on a terminal, install.sh is offered" "" "$FLOW_STUCK"
+assert_eq "install level: ...a no doesn't run it" "no" "$([ -e "$FLOW_DIR/install.log" ] && echo yes || echo no)"
+assert_contains "install level: ...and the command goes on" "$FLOW_OUT" "Stub note"
+
+flow_tty -- note "$FLOW_DIR/transcript.txt" <<STEPS
+install.sh now?${tab}\n
+STEPS
+assert_eq "install level: a yes runs install.sh, once" "ran" "$(cat "$FLOW_DIR/install.log" 2>/dev/null)"
+assert_eq "install level: ...asks once" "1" "$(printf '%s' "$FLOW_OUT" | grep -c 'install.sh now?')"
+assert_eq "install level: ...then starts over, reading what install.sh changed" "$(head -1 "$here/prompts/dap.md")" \
+  "$(jq -r '.prompt | split("\n")[0]' "$FLOW_DIR/first.json")"
+assert_eq "install level: ...and the note drafts" "0" "$FLOW_RC"
+
+FLOW_SOAPCAP="$here/bin/soapcap"
+rm -f "$flow_cfg"
+flow_record
 
 # --- misc ----------------------------------------------------------------
 

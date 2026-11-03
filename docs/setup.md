@@ -98,8 +98,9 @@ fileicon set ~/Desktop/soapcap.command /path/to/soapcap/assets/soapcap.icns
 ```
 
 **Updating**: `update.command` is a second double-clickable shortcut that
-runs `git pull` in the repo. `install.sh` only adds it for a git clone (a
-ZIP download has no `.git` to pull from). By hand:
+runs `git pull` in the repo, then `install.sh` if the update needs it.
+`install.sh` only adds it for a git clone (a ZIP download has no `.git` to
+pull from). By hand:
 
 ```sh
 ln -sf /path/to/soapcap/update.command ~/Desktop/update.command
