@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.14 (2026-11-03)
+
+- Changed the default note model to Gemma 4 E4B, run on soapcap's own llama-server (the PrismML llama.cpp fork Bonsai already used): under two minutes for a long session; set it up with `install.sh` or `tools/models/install.sh gemma4-e4b`.
+- Retired llama3.1:8b, the old default: `note`, `session`, `soapcap model` and `doctor` say so, and `install.sh` replaces it, setting up Gemma 4 E4B, making it the default, and removing llama3.1:8b from Ollama only once Gemma is set up. Other Ollama models still work, untested.
+- Replaced `tools/bonsai/install.sh` with `tools/models/install.sh MODEL...`, which installs both tested models into `~/.local/share/soapcap/engine`; `install.sh` moves an existing Bonsai there and renames `SOAPCAP_BONSAI_DIR`, `_SERVER` and `_PORT` in `config.sh` to `SOAPCAP_ENGINE_DIR`, `SOAPCAP_LLAMA_SERVER` and `SOAPCAP_ENGINE_PORT`.
+- Added an offer to run `install.sh` after an update that needs it: until it has run, `soapcap` asks before any command but `doctor`, `help` and `version`, and goes on as before after a no. From the next update on, `update.command` runs it after pulling.
+- Changed `install.sh` to check for an old Bonsai setup before running `doctor`, and to list only the optional extras that aren't set up yet.
+- Fixed a Plan written on the `PLAN:` line itself being judged empty, which appended the plan-of-care sentence again.
+- Fixed dedupe dropping a therapist's line as an echo when the client repeated a couple of its words; a mic segment longer than the system one is now kept.
+
 ## 0.13 (2026-10-21)
 
 - Changed Bonsai SOAP notes to read the transcript once, on its own, and start the draft and Objective prompts with it, so the Objective pass no longer reads the transcript again: a 60-minute sample went from 500 s to 359 s and a 17-minute one from 244 s to 208 s.
