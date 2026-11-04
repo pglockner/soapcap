@@ -373,8 +373,8 @@ STYLES (structured and combined are experimental)
                         soapcap checks them against the transcript and
                         writes the note. Briefer Subjective, complete Plan.
   combined              A narrative note plus a review of it: unverified
-                        quotes, undocumented risk, and a next-steps
-                        checklist. One extra pass.
+                        quotes, undocumented risk, and a checklist of
+                        next steps and crisis steps. One extra pass.
                         Reviews print to stderr, never the note.
 
 OTHER MODELS (untested)

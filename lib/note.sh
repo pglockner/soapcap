@@ -445,8 +445,8 @@ sc_generate_note() {
       -f "$SC_ROOT/lib/structured/review.jq" | jq -r '
         (.flags[] | "  • " + .),
         (if (.steps | length) > 0 then
-           "  Next steps mentioned in the session — confirm each is in the note:",
-           (.steps[] | "    line \(.line): \(.action)")
+           "  From the session — confirm each is in the note:",
+           (.steps[] | "    \(.ref): \(.action)")
          else empty end)')
     rm -f "$tfile" "$nfile"
     if [ -n "$lines" ]; then SC_REVIEW=$(sc_review_block "review before submitting" "$lines")

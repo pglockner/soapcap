@@ -159,14 +159,16 @@ experimental.
 |---|---|---|
 | `narrative` | **Default.** The model writes the note as prose from `prompts/<format>.md`. | Fullest Subjective and the most natural wording. Format rules depend on the model following the prompt. |
 | `structured` | The model fills in a fixed set of fields — each Objective observation (DAP/BIRP) and next step cites the transcript line it comes from — and soapcap checks them and writes the note itself. SOAP's Objective still comes from its own pass. | Headers, the Objective rule and "Not addressed" are guaranteed by code rather than the model. Plan lists every commitment, and a disclosed risk's safety plan (warning signs, coping strategies, supports, emergency steps) in full. Cited lines, who-said-what, and quotes are checked against the transcript. But Subjective comes out briefer than narrative's, and Plan reads as composed sentences rather than free prose. |
-| `combined` | A narrative note, plus a structured pass used only to check it. | The narrative note, unchanged, plus a review: quotes that aren't in the transcript, a safety risk or safety screen the note doesn't mention, and a checklist of the next steps mentioned in the session. **One more model pass** than narrative, so SOAP takes three. |
+| `combined` | A narrative note, plus a structured pass used only to check it. | The narrative note, unchanged, plus a review: quotes that aren't in the transcript, a safety risk or safety screen the note doesn't mention, and a checklist of the next steps and safety-plan emergency steps mentioned in the session. **One more model pass** than narrative, so SOAP takes three. |
 
 Reviews print to the terminal only (stderr) — never into the note, `--out`,
 or the clipboard.
 
-The next-steps checklist lists every next step the check found, with its
-transcript line. It doesn't say which ones the note is missing; check
-those yourself.
+The checklist lists every next step the check found, with its transcript
+line, and the safety plan's emergency steps (crisis lines, the ER) when a
+risk came up. A note can mention the risk and still leave the crisis step
+out. The checklist doesn't say which ones the note is missing; check those
+yourself.
 
 Structured style's rules, field guide and schema are in
 [`prompts/structured/`](../prompts/structured/); its checks and rendering are

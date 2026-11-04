@@ -585,6 +585,7 @@ assert_contains "combined: shows a review" "$FLOW_ERR" "review before submitting
 assert_contains "combined: flags undocumented risk" "$FLOW_ERR" \
   "A safety risk came up in the session, but the note doesn't mention it"
 assert_contains "combined: lists next steps with their lines" "$FLOW_ERR" "line 2: do a stub task"
+assert_contains "combined: lists the safety plan's emergency steps" "$FLOW_ERR" "safety plan: calling 988"
 assert_not_contains "combined: the review stays out of the note" "$FLOW_OUT" "review before submitting"
 
 flow_run none -- note --style combined --out "$FLOW_DIR/note.out"
