@@ -143,7 +143,7 @@ sc_engine_request() {
         else {temperature: 0.7} end')
   sc_tmpfile resp_file || return 1
   sc_spin_post "$title" "http://127.0.0.1:$SOAPCAP_ENGINE_PORT/v1/chat/completions" \
-    "$payload" "$resp_file" 900 "" "$SC_ENGINE_AUTH"
+    "$payload" "$resp_file" 900 "" "${SC_ENGINE_AUTH:-}"
   rc=$?
   response=$(cat "$resp_file"); rm -f "$resp_file"
 

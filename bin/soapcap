@@ -35,9 +35,11 @@ trap 'sc_alt_screen_stop; sc_cleanup' EXIT
 
 main() {
   local cmd="${1:-help}"
-  # doctor, help and version run as they are, to say what's wrong.
+  # doctor, help and version run as they are, to say what's wrong, and so
+  # does any command's own --help.
   case "$cmd" in
-    live|transcribe|note|deidentify|model|session) sc_install_offer "$@" ;;
+    live|transcribe|note|deidentify|model|session)
+      case " $* " in *" -h "*|*" --help "*) ;; *) sc_install_offer "$@" ;; esac ;;
   esac
   [ $# -gt 0 ] && shift
   case "$cmd" in
