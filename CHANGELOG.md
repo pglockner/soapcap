@@ -7,6 +7,8 @@
 - Added an offer to run `install.sh` after an update that needs it. `install.sh` sets up Gemma 4 E4B, makes it the default, and removes llama3.1:8b from Ollama once Gemma is set up; saying no keeps notes drafting with llama3.1:8b.
 - Replaced `tools/bonsai/install.sh` with `tools/models/install.sh MODEL...`, which installs both models into `~/.local/share/soapcap/engine` and moves an existing Bonsai there; `install.sh` renames `SOAPCAP_BONSAI_DIR`, `_SERVER` and `_PORT` in `config.sh` to `SOAPCAP_ENGINE_DIR`, `SOAPCAP_LLAMA_SERVER` and `SOAPCAP_ENGINE_PORT`.
 - Fixed dedupe dropping a therapist's segment as an echo when the client repeated a couple of its words.
+- Fixed a Plan written on the PLAN header line being judged empty, which added the plan-of-care sentence again.
+- Fixed the help and README listing flags that `session` and `transcribe` don't take, and a command's `--help` offering `install.sh` first.
 
 ## 0.13 (2026-10-21)
 
