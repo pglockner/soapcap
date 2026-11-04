@@ -45,11 +45,8 @@ Fields, in order:
   tangential, circumstantial, or similar.
 - insight: good, fair, limited, improving, or similar.
 - judgment: intact, fair, impaired, or similar.
-- psychomotor: exactly "no psychomotor abnormalities", with nothing
-  added to it, unless a speaker describes a visible movement or posture
-  of the client's during the session (restless, fidgeting, slumped,
-  slowed movements); then that movement, in a few words. Felt sensations
-  and changes over the session go in other fields, never here.
+- psychomotor: one short clause about psychomotor activity, which in
+  almost every session is exactly "No psychomotor abnormalities".
 - risk: status is "disclosed" if anything in the transcript suggests
   suicidal thoughts, self-harm, or thoughts of harming someone else —
   however brief, indirect, passive, or past-tense ("better off without
