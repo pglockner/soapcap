@@ -373,8 +373,8 @@ Finder opens `.command` files in Terminal.app automatically and runs
 
 An update that needs `install.sh` again (a new default model, a moved
 folder) says so: until it has run, `soapcap` offers to run it before any
-command but `doctor`, `help` and `version`, and goes on as before if you
-say no.
+command but `doctor`, `help`, `version` and a command's `--help`, and goes
+on as before if you say no.
 
 The first double-click of a copy that came from a ZIP download, AirDrop or a
 USB drive is blocked by Gatekeeper; allow it once under **System Settings →

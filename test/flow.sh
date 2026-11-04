@@ -395,6 +395,8 @@ assert_contains "install level: Gemma set up, the note uses it" "$(cat "$FLOW_DI
 
 flow_run none -- version
 assert_not_contains "install level: version runs as it is" "$FLOW_ERR" "install.sh"
+flow_run none -- note --help
+assert_not_contains "install level: ...and so does a command's --help" "$FLOW_ERR" "this update needs"
 
 flow_record
 flow_run none SOAPCAP_MODEL= STUB_OLLAMA_MODEL=llama3.1:8b -- note
