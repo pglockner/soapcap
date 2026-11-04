@@ -318,18 +318,19 @@ WHILE RECORDING (live / session, when run from a real terminal)
   q, x, Ctrl-C          Stop for good (while paused too)
   p, space              Pause — nothing is captured until you resume (p again)
 
-OPTIONS (live / transcribe / session)
-  --out FILE            Write the transcript to FILE (default: stdout only)
-  --keep-json FILE      Also write the raw yap JSON (segments + timings)
+OPTIONS (live / session)
   --mic-label NAME      Label for your side of the call   (default: Therapist)
   --system-label NAME   Label for the other side          (default: Client)
-  --locale CODE         Force a locale, e.g. en-US
+  --locale CODE         Force a locale, e.g. en-US (transcribe takes it too)
   --no-dedupe           Keep mic/system audio bleed instead of dropping it
                         — see README "Without headphones"
   --clipboard           Also copy the result to the clipboard (pbcopy)
 
+OPTIONS (live / transcribe)
+  --out FILE            Write the transcript to FILE (default: stdout only)
+  --keep-json FILE      Also write the raw yap JSON (segments + timings)
+
 OPTIONS (note / session)
-  --out FILE            Write the note to FILE (default: stdout only)
   --model NAME          gemma4-e4b (default) or bonsai — see OTHER MODELS
   --format soap|dap|birp Note format           (default: soap)
   --style STYLE         narrative (default), structured, or combined — see STYLES
@@ -338,6 +339,8 @@ OPTIONS (note / session)
                         transcript off this Mac, with a warning)
 
 OPTIONS (note only)
+  --out FILE            Write the note to FILE (default: stdout only)
+  --clipboard           Also copy the note to the clipboard (pbcopy)
   --duration MINUTES    Start the note with "MINUTES minutes, telehealth"
                         (session adds this line itself, from recording time)
 

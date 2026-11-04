@@ -30,7 +30,7 @@ SOAPCAP_LOCALE=""
 #                                   # a section missing or empty; 1 = never
 #                                   # draft again
 # SOAPCAP_STYLE="narrative"         # narrative | structured | combined —
-#                                   # see README "Note style"; combined takes
+#                                   # see docs/notes.md "Note style"; combined takes
 #                                   # roughly twice as long, and the window
 #                                   # app doesn't show its review yet
 # SOAPCAP_OLLAMA_HOST="http://localhost:11434"   # untested Ollama models

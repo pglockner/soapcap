@@ -122,7 +122,7 @@ CATALOG
   case "$SOAPCAP_STYLE" in
     narrative) sc_info "  ok    note style: narrative (the default)" ;;
     structured|combined)
-      sc_info "  ok    note style: $SOAPCAP_STYLE (experimental — see README \"Note style\")" ;;
+      sc_info "  ok    note style: $SOAPCAP_STYLE (experimental — see docs/notes.md \"Note style\")" ;;
     *) sc_info "  WARN  SOAPCAP_STYLE='$SOAPCAP_STYLE' isn't a style — use narrative, structured, or combined" ;;
   esac
 
