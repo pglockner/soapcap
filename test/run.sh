@@ -146,14 +146,6 @@ assert_eq "strip_transcript_echo: leaves a normal note untouched" \
   "SUBJECTIVE:
 Normal note, no echo." "$result"
 
-result=$(printf 'The client appeared to be tearing up during the session. No observable presentation details available from a text-only transcript.\n' | sc_strip_contaminated_fallback)
-assert_eq "strip_contaminated_fallback: strips the fallback when appended to a real observation" \
-  "The client appeared to be tearing up during the session." "$result"
-
-result=$(printf 'No observable presentation details available from a text-only transcript.\n' | sc_strip_contaminated_fallback)
-assert_eq "strip_contaminated_fallback: leaves the fallback alone on its own" \
-  "No observable presentation details available from a text-only transcript." "$result"
-
 result=$(printf 'PLAN:\nContinue weekly sessions.\n\nNote: this appears to be a test recording, not a real session.\n' | sc_strip_trailing_disclaimer)
 assert_eq "strip_trailing_disclaimer: strips a trailing disclaimer-style paragraph" \
   "PLAN:

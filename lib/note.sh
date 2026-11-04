@@ -205,7 +205,7 @@ sc_draft_sections() {
 # with the safety nets against known model misbehavior applied — see each
 # function's own comment for the specific failure it guards against.
 sc_clean_draft() {
-  sc_strip_transcript_echo | sc_strip_contaminated_fallback | sc_strip_trailing_disclaimer \
+  sc_strip_transcript_echo | sc_strip_trailing_disclaimer \
     | if [ "$1" = soap ]; then sc_default_plan; else cat; fi
 }
 

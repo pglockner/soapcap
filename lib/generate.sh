@@ -70,30 +70,6 @@ sc_strip_transcript_echo() {
   awk '/^TRANSCRIPT:[[:space:]]*$/ { exit } { print }'
 }
 
-# sc_strip_contaminated_fallback — safety net: the SOAP prompt's exact
-# required Objective fallback sentence ("No observable presentation
-# details...") is meant to be used ALONE, only when there's nothing to
-# report -- but a model sometimes appends it to the end of a line that
-# already has a real observation on it, producing a self-contradicting
-# sentence. Every observed instance of this puts the fallback on the same
-# line as the real content (never as its own separate paragraph), so
-# strip just the fallback text when a line contains it alongside
-# something else, leaving the real content and the fallback's own correct
-# standalone use untouched.
-sc_strip_contaminated_fallback() {
-  awk -v fb="No observable presentation details available from a text-only transcript." '
-    {
-      if ($0 != fb && index($0, fb) > 0) {
-        line = substr($0, 1, index($0, fb) - 1)
-        sub(/[ \t]+$/, "", line)
-        print line
-      } else {
-        print
-      }
-    }
-  '
-}
-
 # sc_strip_trailing_disclaimer — safety net: seen in the wild — a model
 # appending a trailing aside after Plan editorializing about the
 # transcript itself ("Note: this appears to be a test recording..."),
