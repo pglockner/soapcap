@@ -1,11 +1,11 @@
 # Changelog
 
-## 0.14 (2026-10-27 – 2026-11-03)
+## 0.14 (2026-10-27 – 2026-11-04)
 
 - Changed the default note model to Gemma 4 E4B, run on soapcap's own llama-server (the PrismML llama.cpp fork Bonsai already used), and retired llama3.1:8b: `note`, `session`, `soapcap model` and `doctor` warn when a note would use it.
+- Fixed llama-server running with no API key: each start now gets a new random key, so other programs and web pages on the Mac can't use it while a note drafts.
 - Added an offer to run `install.sh` after an update that needs it. `install.sh` sets up Gemma 4 E4B, makes it the default, and removes llama3.1:8b from Ollama once Gemma is set up; saying no keeps notes drafting with llama3.1:8b.
 - Replaced `tools/bonsai/install.sh` with `tools/models/install.sh MODEL...`, which installs both models into `~/.local/share/soapcap/engine` and moves an existing Bonsai there; `install.sh` renames `SOAPCAP_BONSAI_DIR`, `_SERVER` and `_PORT` in `config.sh` to `SOAPCAP_ENGINE_DIR`, `SOAPCAP_LLAMA_SERVER` and `SOAPCAP_ENGINE_PORT`.
-- Fixed a Plan written on the PLAN header line being judged empty, which added the plan-of-care sentence again.
 - Fixed dedupe dropping a therapist's segment as an echo when the client repeated a couple of its words.
 
 ## 0.13 (2026-10-21)
