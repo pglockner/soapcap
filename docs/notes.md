@@ -106,7 +106,10 @@ soapcap note --model bonsai transcript.txt
 ```
 
 soapcap starts the server on `127.0.0.1` only when drafting a note and
-stops it straight after, so its memory is free the rest of the time. Its
+stops it straight after, so its memory is free the rest of the time. Each
+start gets a new random API key, so other programs and web pages on the Mac
+can't use the server or read what it holds; only its `/health` answers
+without the key. Its
 location and port are configurable — see `config.example.sh`. Gemma's
 server takes a checkpoint at every request (`--checkpoint-min-step 0`):
 its attention looks back over a sliding window, so without one the
