@@ -10,7 +10,9 @@
 # Exits non-zero if anything fails, so it's usable from CI.
 set -u
 
-here=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+# Physical path (-P), as bin/soapcap resolves SC_ROOT, so messages naming
+# $here/... match from a checkout reached through a symlink (macOS /tmp, /var).
+here=$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 # shellcheck source=lib/common.sh
 . "$here/lib/common.sh"
 # shellcheck source=lib/transcript.sh
