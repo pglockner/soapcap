@@ -17,14 +17,14 @@
   "mental_status": {
     "type": "object",
     "properties": {
-      "engagement": { "type": "string", "maxLength": 100 },
       "affect": { "type": "string", "maxLength": 100 },
-      "mood": { "type": "string", "maxLength": 100 },
-      "speech": { "type": "string", "maxLength": 100 },
-      "thought_process": { "type": "string", "maxLength": 100 },
+      "engagement": { "type": "string", "maxLength": 100 },
       "insight": { "type": "string", "maxLength": 100 },
       "judgment": { "type": "string", "maxLength": 100 },
-      "psychomotor": { "type": "string", "maxLength": 100 }
+      "mood": { "type": "string", "maxLength": 100 },
+      "psychomotor": { "type": "string", "maxLength": 100 },
+      "speech": { "type": "string", "maxLength": 100 },
+      "thought_process": { "type": "string", "maxLength": 100 }
     },
     "required": ["engagement", "affect", "mood", "speech", "thought_process", "insight", "judgment", "psychomotor"]
   },

@@ -209,7 +209,12 @@ sc_clean_draft() {
     | if [ "$1" = soap ]; then sc_default_plan; else cat; fi
 }
 
-# sc_structured_schema FORMAT — prints the JSON schema for FORMAT.
+# sc_structured_schema FORMAT — prints the JSON schema for FORMAT. The
+# server has the model write the fields in the order of `properties`. That
+# order matters: when psychomotor came last in mental_status, Gemma ran on
+# past it ("No psychomotor abnormalities noted during session change
+# noted") in 22 of 26 notes, and in none with mental_status in
+# alphabetical order, the order soapcap-swift sends it in.
 sc_structured_schema() {
   local fields
   fields=$(sc_structured_fields "$1" | jq -Rc 'split(" ")')
