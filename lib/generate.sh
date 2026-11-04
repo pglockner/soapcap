@@ -201,17 +201,20 @@ sc_token_progress() {
   else printf '%s tokens\n' "$1"; fi
 }
 
-# sc_spin_post TITLE URL PAYLOAD OUTFILE MAX_SECONDS [COUNT] — POSTs PAYLOAD
-# as JSON to URL, response body to OUTFILE. With COUNT set, the response is
-# Ollama's streamed NDJSON (one line per generated token) and the status
-# line shows a live token count and rate. Returns curl's own exit status. On a
-# terminal it shows a status line, redrawn every second, with elapsed time
-# and memory in use (a large model can push a 16GB Mac into swap);
-# otherwise, e.g. under a GUI front end, just the title. PAYLOAD holds the
-# transcript, so it goes to curl from a private temp file rather than as
-# an argument, where any local process could read it with `ps`.
+# sc_spin_post TITLE URL PAYLOAD OUTFILE MAX_SECONDS [COUNT] [HEADERS] —
+# POSTs PAYLOAD as JSON to URL, response body to OUTFILE. With COUNT set, the
+# response is Ollama's streamed NDJSON (one line per generated token) and the
+# status line shows a live token count and rate. HEADERS is a file of extra
+# request headers, one per line (the engine's API key). Returns curl's own
+# exit status. On a terminal it shows a status line, redrawn every second,
+# with elapsed time and memory in use (a large model can push a 16GB Mac
+# into swap); otherwise, e.g. under a GUI front end, just the title. PAYLOAD
+# holds the transcript, so it goes to curl from a private temp file rather
+# than as an argument, where any local process could read it with `ps`.
 sc_spin_post() {
-  local title="$1" url="$2" payload="$3" out="$4" max="$5" count="${6:-}" body rc
+  local title="$1" url="$2" payload="$3" out="$4" max="$5" count="${6:-}" headers="${7:-}" body rc
+  local extra=()
+  [ -n "$headers" ] && extra=(-H "@$headers")
   sc_tmpfile body || return 1
   printf '%s' "$payload" > "$body"
   [ -t 2 ] || sc_info "$title"
@@ -220,7 +223,7 @@ sc_spin_post() {
   # end stops soapcap) would otherwise go unanswered, and a second one kills
   # bash without its EXIT trap, orphaning the engine's server.
   curl -s --max-time "$max" -X POST "$url" \
-    -H 'Content-Type: application/json' -d "@$body" -o "$out" &
+    -H 'Content-Type: application/json' ${extra[@]+"${extra[@]}"} -d "@$body" -o "$out" &
   local cpid=$!
   # shellcheck disable=SC2064  # expand $cpid now, on purpose
   trap "kill $cpid 2>/dev/null; exit 143" TERM

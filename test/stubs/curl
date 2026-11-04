@@ -17,12 +17,15 @@
 # mental_status (SOAP's Objective pass) gets that shape instead, per
 # STUB_OBJ_MODE: ok (default) | invalid (always malformed); its risk status
 # is STUB_OBJ_RISK (default not_addressed). STUB_CURL_PAYLOG, if set, gets
-# every request payload, one compact JSON per line.
+# every request payload, one compact JSON per line. An engine request needs
+# the stub llama-server's key (its last "key" line in STUB_LLAMA_LOG) as a
+# Bearer header, sent with -H or -H @FILE, or gets llama-server's 401 reply.
 [ -n "${STUB_CURL_ARGS:-}" ] && printf '%s\n' "$*" >> "$STUB_CURL_ARGS"
-url=""; payload=""; out=""
+url=""; payload=""; out=""; headers=""
 while [ $# -gt 0 ]; do
   case "$1" in
     -d) case "$2" in @*) payload=$(cat "${2#@}") ;; *) payload="$2" ;; esac; shift 2 ;;
+    -H) case "$2" in @*) headers="$headers$(cat "${2#@}")"$'\n' ;; *) headers="$headers$2"$'\n' ;; esac; shift 2 ;;
     -o) out="$2"; shift 2 ;;
     http*) url="$1"; shift ;;
     *) shift ;;
@@ -112,6 +115,11 @@ case "$url" in
     printf '{"status":"ok"}' ;;
   */v1/chat/completions)
     note='SUBJECTIVE:\nEngine stub note\n\nOBJECTIVE:\nStub.\n\nASSESSMENT:\nStub.\n\nPLAN:\nStub.'
+    key=$(grep '^key ' "${STUB_LLAMA_LOG:-/dev/null}" 2>/dev/null | tail -n 1 | cut -d' ' -f2)
+    if [ -n "$key" ] && ! printf '%s' "$headers" | grep -qx "Authorization: Bearer $key"; then
+      emit '{"error":{"code":401,"message":"Invalid API Key","type":"authentication_error"}}'
+      exit 0
+    fi
     if [ "$structured" = yes ]; then
       struct_reply
       emit "$(jq -nc --arg c "$STRUCT_JSON" --arg d "$STRUCT_DONE" '{choices: [{message: {content: $c}, finish_reason: $d}]}')"

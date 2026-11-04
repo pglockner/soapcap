@@ -8,7 +8,13 @@ main [README](../README.md#install).
 ```sh
 brew install yap jq
 ln -s "$PWD/bin/soapcap" "$(brew --prefix)/bin/soapcap"   # optional PATH link
+bash -c '. lib/install_level.sh && sc_install_record'      # mark setup as done
 ```
+
+The last line records what `install.sh` would on finishing. Without it,
+`soapcap` offers to run `install.sh` before each command. An update that
+needs `install.sh` again brings the offer back; once you've done that
+update's setup by hand, run the line again.
 
 ## What `doctor` reports
 

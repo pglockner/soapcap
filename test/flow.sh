@@ -334,6 +334,13 @@ assert_eq "gemma: reads the transcript alone first, and the draft and Objective 
     "$FLOW_DIR/payloads.jsonl")"
 assert_eq "gemma: server is stopped after the note" "stopped 0" "$(tail -n 1 "$FLOW_DIR/llama.log") $FLOW_LLAMA_LEFT"
 assert_not_contains "gemma: nothing about the retired model" "$FLOW_ERR" "retired"
+# (The stub curl refuses an engine request without the server's key, so the
+# drafted note above already shows the key was sent.)
+engine_key=$(grep '^key ' "$FLOW_DIR/llama.log" | cut -d' ' -f2)
+assert_eq "engine: the server gets a random API key" "yes" \
+  "$(printf '%s' "$engine_key" | grep -Eqx '[0-9a-f]{32}' && echo yes || echo no)"
+assert_not_contains "engine: ...not as an argument, where ps shows it" \
+  "$(grep '^started' "$FLOW_DIR/llama.log") $(cat "$FLOW_DIR/curl.args")" "$engine_key"
 
 flow_run none SOAPCAP_MODEL= -- note
 assert_eq "gemma: not set up exits non-zero" "1" "$FLOW_RC"

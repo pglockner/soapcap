@@ -70,6 +70,12 @@ sc_engine_check() {
 # earlier draft is reused when its context is big enough. Sets
 # SC_ENGINE_PID; sc_engine_stop undoes it. Server flags match the ones
 # soapcap's prompts were tested with.
+#
+# Each server gets a new random API key, so no other program or web page on
+# this Mac can use it (or read what it holds) while a note drafts; only
+# /health answers without it. The key reaches the server in its
+# environment and curl from a private header file (SC_ENGINE_AUTH), never
+# as an argument, where any local process could read it with `ps`.
 sc_engine_start() {
   local model="$1" ctx="$3" url="http://127.0.0.1:$SOAPCAP_ENGINE_PORT" label gguf flags
   [ "$ctx" -ge 8192 ] || ctx=8192
@@ -81,8 +87,12 @@ sc_engine_start() {
   IFS='|' read -r label gguf flags <<<"$(sc_engine_model "$model")"
 
   sc_tmpfile SC_ENGINE_LOG || return 1
+  sc_tmpfile SC_ENGINE_AUTH || return 1
+  local key
+  key=$(od -An -tx1 -N16 /dev/urandom | tr -d ' \n')
+  printf 'Authorization: Bearer %s\n' "$key" > "$SC_ENGINE_AUTH"
   # shellcheck disable=SC2086  # $flags is a list of flags
-  "$SOAPCAP_LLAMA_SERVER" -m "$gguf" --host 127.0.0.1 --port "$SOAPCAP_ENGINE_PORT" \
+  LLAMA_API_KEY="$key" "$SOAPCAP_LLAMA_SERVER" -m "$gguf" --host 127.0.0.1 --port "$SOAPCAP_ENGINE_PORT" \
     -ngl 99 -c "$ctx" --parallel 1 --cache-type-k q8_0 --cache-type-v q8_0 $flags \
     >"$SC_ENGINE_LOG" 2>&1 &
   SC_ENGINE_PID=$!
@@ -133,7 +143,7 @@ sc_engine_request() {
         else {temperature: 0.7} end')
   sc_tmpfile resp_file || return 1
   sc_spin_post "$title" "http://127.0.0.1:$SOAPCAP_ENGINE_PORT/v1/chat/completions" \
-    "$payload" "$resp_file" 900
+    "$payload" "$resp_file" 900 "" "$SC_ENGINE_AUTH"
   rc=$?
   response=$(cat "$resp_file"); rm -f "$resp_file"
 
@@ -170,4 +180,6 @@ sc_engine_stop() {
     rm -f "$SC_ENGINE_LOG"
   fi
   SC_ENGINE_LOG=""
+  [ -n "${SC_ENGINE_AUTH:-}" ] && rm -f "$SC_ENGINE_AUTH"
+  SC_ENGINE_AUTH=""
 }

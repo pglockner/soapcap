@@ -168,8 +168,10 @@ would use the retired `llama3.1:8b`.
 Enter takes the default at every prompt; without
 [gum](docs/setup.md#nicer-prompts-and-file-picking), a bare first letter works too (`r`
 for regenerate, `b` for birp). `--format` and `--no-note` skip the note
-question; `--clipboard` forces the copy on non-interactive runs. Every
-`live`/`note` flag still applies.
+question; `--clipboard` forces the copy on non-interactive runs.
+`--mic-label`, `--system-label`, `--locale` and `--no-dedupe` work as in
+`live`, and `--model`, `--style` and `--host` as in `note`; `--out`,
+`--keep-json` and `--duration` aren't `session` options.
 
 To be asked less, answer the yes/no questions ahead of time in
 `~/.config/soapcap/config.sh` — `SOAPCAP_SESSION_DEIDENTIFY`,
