@@ -446,6 +446,27 @@ flow_run none "${BONSAI_ENV[@]}" STUB_ENGINE_REPLY=error -- note --model bonsai
 assert_contains "bonsai: a server error message is surfaced" "$FLOW_ERR" "Bonsai error: boom"
 assert_eq "bonsai: server stopped after an error" "0" "$FLOW_LLAMA_LEFT"
 
+# The GPU running out of memory: the real server logs a Metal failure and
+# replies "Compute error.", then can compute nothing more until restarted.
+flow_run none "${BONSAI_ENV[@]}" STUB_LLAMA_MODE=gpufail STUB_ENGINE_REPLY=error -- note --model bonsai
+assert_contains "gpu: running out of GPU memory says so and names the lighter model" "$FLOW_ERR" \
+  "Bonsai ran out of GPU memory. Draft with gemma4-e4b (--model gemma4-e4b), which needs less, or close other apps and try again."
+assert_not_contains "gpu: ...not as a bare server error" "$FLOW_ERR" "Bonsai error: boom"
+assert_eq "gpu: nothing more is sent to the failed server" "1" "$(nreq /v1/chat/completions)"
+assert_eq "gpu: the failed server is stopped" "stopped 0" "$(tail -n 1 "$FLOW_DIR/llama.log") $FLOW_LLAMA_LEFT"
+flow_run none "${GEMMA_ENV[@]}" STUB_LLAMA_MODE=gpufail STUB_ENGINE_REPLY=error -- note --model gemma4-e4b
+assert_contains "gpu: the lightest model is told only to close apps" "$FLOW_ERR" \
+  "Gemma 4 E4B ran out of GPU memory. Close other apps and try again."
+
+# What the model put on the GPU, against what macOS lets one program use.
+flow_run none "${GEMMA_ENV[@]}" STUB_LLAMA_GPU_BUDGET=12124 -- note --model gemma4-e4b
+assert_contains "gpu: the server logs its GPU memory" "$(cat "$FLOW_DIR/llama.log")" "-lv 4"
+assert_not_contains "gpu: a model within the GPU's memory gets no warning" "$FLOW_ERR" "GPU memory"
+flow_run none "${BONSAI_ENV[@]}" STUB_LLAMA_GPU_BUDGET=5000 -- note --model bonsai
+assert_eq "gpu: a model beyond it still drafts" "0" "$FLOW_RC"
+assert_contains "gpu: ...with a warning naming the lighter model" "$FLOW_ERR" \
+  "warning: Bonsai took 5.5 GB of GPU memory for this note, more than the 5.2 GB this Mac allows one program, so drafting may fail. gemma4-e4b needs less (--model gemma4-e4b)."
+
 flow_run none "${BONSAI_ENV[@]}" STUB_ENGINE_REPLY=length -- note --model bonsai
 assert_contains "bonsai: a truncated note is flagged" "$FLOW_ERR" "output limit"
 
