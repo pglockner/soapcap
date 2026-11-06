@@ -69,7 +69,8 @@ sc_engine_check() {
 # 8192), and waits until it has loaded. A server still running MODEL from an
 # earlier draft is reused when its context is big enough. Sets
 # SC_ENGINE_PID; sc_engine_stop undoes it. Server flags match the ones
-# soapcap's prompts were tested with.
+# soapcap's prompts were tested with, plus `-lv 4`, under which the server
+# logs its GPU memory (never the prompt) for sc_engine_gpu_check.
 #
 # Each server gets a new random API key, so no other program or web page on
 # this Mac can use it (or read what it holds) while a note drafts; only
@@ -83,6 +84,7 @@ sc_engine_start() {
     return 0
   fi
   sc_engine_stop
+  SC_ENGINE_FAULT=""
   sc_engine_check "$model" || return 1
   IFS='|' read -r label gguf flags <<<"$(sc_engine_model "$model")"
 
@@ -93,7 +95,7 @@ sc_engine_start() {
   printf 'Authorization: Bearer %s\n' "$key" > "$SC_ENGINE_AUTH"
   # shellcheck disable=SC2086  # $flags is a list of flags
   LLAMA_API_KEY="$key" "$SOAPCAP_LLAMA_SERVER" -m "$gguf" --host 127.0.0.1 --port "$SOAPCAP_ENGINE_PORT" \
-    -ngl 99 -c "$ctx" --parallel 1 --cache-type-k q8_0 --cache-type-v q8_0 $flags \
+    -ngl 99 -c "$ctx" --parallel 1 --cache-type-k q8_0 --cache-type-v q8_0 -lv 4 $flags \
     >"$SC_ENGINE_LOG" 2>&1 &
   SC_ENGINE_PID=$!
   SC_ENGINE_CTX=$ctx
@@ -110,6 +112,7 @@ sc_engine_start() {
     fi
     # Not `jq -e`: jq 1.6 exits 0 on empty input, i.e. when nothing answers.
     if [ "$(curl -s --max-time 2 "$url/health" 2>/dev/null | jq -r '.status // empty' 2>/dev/null)" = ok ]; then
+      sc_engine_gpu_check "$model"
       return 0
     fi
     sleep 1
@@ -118,6 +121,53 @@ sc_engine_start() {
   sc_err "$label didn't finish loading within 180s"
   sc_engine_stop
   return 1
+}
+
+# sc_engine_gpu_use — prints "BUFFERS BUDGET" in MiB from the server's log:
+# what the model put on the GPU (weights, KV cache, compute buffers) and
+# the GPU memory macOS lets one program use (Metal's
+# recommendedMaxWorkingSetSize, logged as the MTL0 device's size). Prints
+# nothing until both are there.
+sc_engine_gpu_use() {
+  [ -n "${SC_ENGINE_LOG:-}" ] && [ -f "$SC_ENGINE_LOG" ] || return 0
+  awk '
+    /- MTL0 *: .*\([0-9]+ MiB, [0-9]+ MiB free\)/ {
+      s = $0; sub(/.*\(/, "", s); sub(/ MiB,.*/, "", s); budget = s }
+    / MTL0[^ ]* .*buffer size *= *[0-9.]+ MiB/ {
+      s = $0; sub(/.*buffer size *= */, "", s); sub(/ MiB.*/, "", s); buffers += s }
+    END { if (budget != "" && buffers > 0) printf "%.2f %d\n", buffers, budget }' "$SC_ENGINE_LOG"
+}
+
+# sc_engine_lighter MODEL — the engine model needing the least memory, when
+# MODEL isn't it: what to suggest when MODEL runs out of GPU memory.
+sc_engine_lighter() { [ "$1" = gemma4-e4b ] || echo gemma4-e4b; }
+
+# sc_engine_gpu_check MODEL — warns when the model just loaded takes more
+# GPU memory than macOS lets one program use: past that a draft can fail.
+# Over total memory it would only be slow, which isn't warned of.
+sc_engine_gpu_check() {
+  local use buffers budget lighter instead
+  use=$(sc_engine_gpu_use)
+  [ -n "$use" ] || return 0
+  read -r buffers budget <<<"$use"
+  awk -v b="$buffers" -v l="$budget" 'BEGIN { exit !(b > l) }' || return 0
+  lighter=$(sc_engine_lighter "$1")
+  instead=" A shorter session might fit."
+  [ -n "$lighter" ] && instead=" $lighter needs less (--model $lighter)."
+  sc_err "warning: $(sc_engine_label "$1") took $(awk -v m="$buffers" 'BEGIN { printf "%.1f", m * 1048576 / 1e9 }') GB of GPU memory for this note, more than the $(awk -v m="$budget" 'BEGIN { printf "%.1f", m * 1048576 / 1e9 }') GB this Mac allows one program, so drafting may fail.$instead"
+}
+
+# sc_engine_gpu_failed — true when the server's log says a Metal command
+# buffer failed: on these Macs the GPU ran out of memory, and the server
+# then fails every later computation until it is restarted. It logs the
+# failure as it replies, so allow it half a second to land.
+sc_engine_gpu_failed() {
+  local i=0
+  while :; do
+    [ -n "${SC_ENGINE_LOG:-}" ] && grep -qE 'command buffer [0-9]+ failed with status|error state from a previous command buffer failure' "$SC_ENGINE_LOG" 2>/dev/null && return 0
+    [ "$i" -ge 5 ] && return 1
+    sleep 0.1; i=$((i + 1))
+  done
 }
 
 # sc_engine_request MODEL HOST PROMPT TITLE CAP [SCHEMA] — sets SC_RAW_NOTE
@@ -130,8 +180,11 @@ sc_engine_start() {
 # tested without it.
 sc_engine_request() {
   SC_RAW_NOTE=""; SC_RAW_DONE=""
-  local prompt="$3" title="$4" cap="$5" schema="${6:-}" payload resp_file rc response label
+  local prompt="$3" title="$4" cap="$5" schema="${6:-}" payload resp_file rc response label lighter
   label=$(sc_engine_label "$1")
+  # After the GPU ran out of memory the server was stopped; say so again
+  # rather than send a request nothing answers.
+  if [ -n "${SC_ENGINE_FAULT:-}" ]; then sc_err "$SC_ENGINE_FAULT"; return 1; fi
   # The prompt holds the transcript: it reaches jq on stdin, not as an
   # argument, where any local process could read it with `ps`.
   payload=$(printf '%s' "$prompt" | jq -Rs --argjson cap "$cap" --argjson schema "${schema:-null}" '
@@ -147,11 +200,23 @@ sc_engine_request() {
   rc=$?
   response=$(cat "$resp_file"); rm -f "$resp_file"
 
-  if [ "$rc" -ne 0 ] || [ -z "$response" ]; then
-    sc_err "request to $label failed"; return 1
-  fi
-  if printf '%s' "$response" | jq -e '.error' >/dev/null 2>&1; then
-    sc_err "$label error: $(printf '%s' "$response" | jq -r '.error.message // .error')"
+  if [ "$rc" -ne 0 ] || [ -z "$response" ] || printf '%s' "$response" | jq -e '.error' >/dev/null 2>&1; then
+    if sc_engine_gpu_failed; then
+      sc_engine_stop
+      lighter=$(sc_engine_lighter "$1")
+      SC_ENGINE_FAULT="$label ran out of GPU memory."
+      if [ -n "$lighter" ]; then
+        SC_ENGINE_FAULT="$SC_ENGINE_FAULT Draft with $lighter (--model $lighter), which needs less, or close other apps and try again."
+      else
+        SC_ENGINE_FAULT="$SC_ENGINE_FAULT Close other apps and try again."
+      fi
+      sc_err "$SC_ENGINE_FAULT"; return 1
+    fi
+    if [ "$rc" -ne 0 ] || [ -z "$response" ]; then
+      sc_err "request to $label failed"
+    else
+      sc_err "$label error: $(printf '%s' "$response" | jq -r '.error.message // .error')"
+    fi
     return 1
   fi
   SC_RAW_NOTE=$(printf '%s' "$response" | jq -r '.choices[0].message.content // empty')

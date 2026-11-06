@@ -3,12 +3,30 @@
 # "key KEY" (its LLAMA_API_KEY, which the stub curl then requires) and
 # "started ARGS" to STUB_LLAMA_LOG, then runs until signalled and logs
 # "stopped". STUB_LLAMA_MODE=crash exits at once, as a failed model load does.
+# STUB_LLAMA_GPU_BUDGET=MiB logs, as the real one does while loading, a GPU
+# of that size and 5252.47 MiB of the model's buffers on it (Gemma at a 32k
+# context). STUB_LLAMA_MODE=gpufail also logs the Metal failure the real one
+# logs when the GPU runs out of memory.
 log="${STUB_LLAMA_LOG:-/dev/null}"
 if [ "${STUB_LLAMA_MODE:-}" = crash ]; then
   echo "llama_model_load: error loading model" >&2
   exit 1
 fi
 [ -n "${LLAMA_API_KEY:-}" ] && echo "key $LLAMA_API_KEY" >> "$log"
+if [ -n "${STUB_LLAMA_GPU_BUDGET:-}" ]; then
+  cat >&2 <<EOF
+0.00.041.465 I cmn  common_param:   - MTL0    : Apple M4 ($STUB_LLAMA_GPU_BUDGET MiB, $((STUB_LLAMA_GPU_BUDGET - 1)) MiB free)
+0.00.041.471 I cmn  common_param:   - CPU     : Apple M4 (16384 MiB, 16384 MiB free)
+0.00.826.782 I load_tensors:   CPU_Mapped model buffer size =  2208.00 MiB
+0.00.826.783 I load_tensors:  MTL0_Mapped model buffer size =  4731.51 MiB
+0.00.829.922 I llama_context:        CPU  output buffer size =     1.00 MiB
+0.00.837.030 I llama_kv_cache:       MTL0 KV buffer size =   272.00 MiB
+0.00.847.262 I llama_kv_cache:       MTL0 KV buffer size =    21.25 MiB
+0.00.869.458 I sched_reserve:       MTL0 compute buffer size =   227.71 MiB
+0.00.869.460 I sched_reserve:        CPU compute buffer size =    65.30 MiB
+EOF
+fi
+[ "${STUB_LLAMA_MODE:-}" = gpufail ] && echo "ggml_metal_synchronize: error: command buffer 0 failed with status 5" >&2
 echo "started $*" >> "$log"
 trap 'echo stopped >> "$log"; exit 0' TERM INT
 while :; do sleep 0.1; done
